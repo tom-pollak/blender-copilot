@@ -51,11 +51,18 @@ def simulate_generation(job):
     using job["text_prompt"], job["image_path"], job["style_image"], job["resampler"], etc.
     """
     job["status"] = "running"
-    time.sleep(5)  # Fake 5-second generation time
-    # When done:
-    job["status"] = "done"
-    # For demonstration, we just pretend it generated this one dummy file:
-    job["result_file"] = "/Users/tom/fun/stable-fast-3d/output/0/mesh.glb"
+
+    # Check for cancellation every second
+    for _ in range(5):  # Still simulating 5 seconds total
+        if job["status"] == "cancelled":
+            return
+        time.sleep(1)
+
+    # When done (if not cancelled):
+    if job["status"] != "cancelled":
+        job["status"] = "done"
+        # For demonstration, we just pretend it generated this one dummy file:
+        job["result_file"] = "/Users/tom/fun/stable-fast-3d/output/0/mesh.glb"
 
     self.report({"INFO"}, f"Done job {new_job['id']}.")
 
@@ -276,6 +283,28 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
 
 
 # ------------------------------------------------------------------------
+# Operator: Cancel Job
+# ------------------------------------------------------------------------
+class BCOPILOT_OT_CancelJob(bpy.types.Operator):
+    """Cancels a running or finished job"""
+    bl_idname = "bcopilot.cancel_job"
+    bl_label = "Cancel Job"
+
+    job_id: bpy.props.IntProperty()
+
+    def execute(self, context):
+        global jobs
+        job = next((j for j in jobs if j["id"] == self.job_id), None)
+        if not job:
+            self.report({"ERROR"}, "Job not found.")
+            return {"CANCELLED"}
+
+        cancel_job(job)
+        self.report({"INFO"}, f"Cancelled job {job['id']}.")
+        return {"FINISHED"}
+
+
+# ------------------------------------------------------------------------
 # Panel
 # ------------------------------------------------------------------------
 class BCOPILOT_PT_MainPanel(bpy.types.Panel):
@@ -318,9 +347,13 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
         )
 
         for job in jobs:
-            row = layout.row()
+            row = layout.row(align=True)
             row.label(text=f"Job {job['id']}")
             row.label(text=f"Status: {job['status']}")
+
+            # Add cancel button
+            op = row.operator("bcopilot.cancel_job", text="", icon='X')
+            op.job_id = job["id"]
 
             if job["status"] == "done":
                 op = row.operator("bcopilot.apply_job_result", text="Apply")
@@ -330,18 +363,30 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
 # ------------------------------------------------------------------------
 # Timer handler
 # ------------------------------------------------------------------------
+def cancel_job(job):
+    """Cancel a running or finished job."""
+    if job["status"] == "running" and job["thread"] and job["thread"].is_alive():
+        # Can't actually kill threads in Python, but we can mark it as cancelled
+        # and handle that in simulate_generation
+        job["status"] = "cancelled"
+    else:
+        # If it's already done or errored, just remove it
+        global jobs
+        if job in jobs:
+            jobs.remove(job)
+
 def check_jobs():
     """Check if any job threads have finished or errored."""
     global jobs
     for job in jobs:
         if job["thread"] is not None:
-            # If the thread's still running, do nothing
             if job["thread"].is_alive():
+                # Check if job was cancelled
+                if job["status"] == "cancelled":
+                    continue
                 continue
             # If the thread is dead and the job is still "running", it might have ended unexpectedly
             if job["status"] == "running":
-                # Our simulate_generation normally sets status="done" on success
-                # so if it's still "running" => error
                 job["status"] = "error"
     return 0.5  # check again in half a second
 
@@ -353,6 +398,7 @@ classes = (
     BCOPILOT_Properties,
     BCOPILOT_OT_CreateJob,
     BCOPILOT_OT_ApplyJobResult,
+    BCOPILOT_OT_CancelJob,
     BCOPILOT_PT_MainPanel,
 )
 
