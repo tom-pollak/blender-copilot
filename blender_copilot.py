@@ -177,7 +177,7 @@ class BCOPILOT_Properties(bpy.types.PropertyGroup):
         description="Output resolution for generated textures/meshes",
         items=[
             ("512", "512", ""),
-            ("1024", "1024", ""),
+            ("1024", "1024", "(default)"),
             ("2048", "2048", ""),
             ("4096", "4096", ""),
         ],
@@ -322,21 +322,27 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="Generation Settings", icon="RENDER_STILL")
-        box.prop(props, "text_prompt", text="Prompt")
+        # row = box.row().split(factor=label_split)
+        box.label(text="Prompt:")
+        box.prop(props, "text_prompt", text="")
 
         row = box.row()
         row.prop(props, "use_image", text="Use Image?")
         if props.use_image:
-            box.prop(props, "image_path")
+            row = box.row().split(factor=0.3)
+            row.label(text="Image path:")
+            row.prop(props, "image_path", text="")
 
         row = box.row()
         row.prop(props, "use_scene_style", text="Use Scene Style?")
 
-        row = box.row()
-        row.prop(props, "resampler", text="Resampler")
+        row = box.row().split(factor=0.28)
+        row.label(text="Resampler:")
+        row.prop(props, "resampler", text="")
 
-        row = box.row()
-        row.prop(props, "resolution", text="Resolution")
+        row = box.row().split(factor=0.28)
+        row.label(text="Resolution:")
+        row.prop(props, "resolution", text="")
 
         box.operator("bcopilot.create_job", text="Start Generation")
 
