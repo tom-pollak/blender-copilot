@@ -57,6 +57,8 @@ def simulate_generation(job):
     # For demonstration, we just pretend it generated this one dummy file:
     job["result_file"] = "/Users/tom/fun/stable-fast-3d/output/0/mesh.glb"
 
+    self.report({"INFO"}, f"Done job {new_job['id']}.")
+
 
 # ------------------------------------------------------------------------
 # Utility: Create a new job
@@ -66,7 +68,7 @@ def create_new_job(
 ):
     global jobs, job_counter
 
-    if len(jobs) >= MAX_JOBS:
+    if number_of_active_jobs() >= MAX_JOBS:
         return None  # can't exceed MAX_JOBS
 
     job_counter += 1
@@ -117,6 +119,11 @@ def generate_temp_filepath(prefix="", ext=".png"):
     now_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = f"{prefix}{now_str}{ext}"
     return os.path.join(temp_dir, filename)
+
+
+def number_of_active_jobs():
+    global jobs
+    return len([j for j in jobs if j["status"] == "running"])
 
 
 # ------------------------------------------------------------------------
@@ -264,9 +271,7 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
         # Remove the job from the list now that it's applied
         jobs.remove(job)
 
-        self.report(
-            {"INFO"}, f"Applied job {job['id']} and placed mesh in front of the camera."
-        )
+        self.report({"INFO"}, f"Applied job {job['id']}.")
         return {"FINISHED"}
 
 
@@ -308,7 +313,9 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
 
         # Active jobs
         layout.separator()
-        layout.label(text=f"Active Jobs (max {MAX_JOBS}): {len(jobs)}", icon="INFO")
+        layout.label(
+            text=f"Active Jobs (max {MAX_JOBS}): {number_of_active_jobs()}", icon="INFO"
+        )
 
         for job in jobs:
             row = layout.row()
