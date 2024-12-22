@@ -2,6 +2,7 @@
 # type: ignore
 # fmt: off
 
+import time
 from typing import Literal
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,11 +10,12 @@ from PIL import Image
 from io import BytesIO
 
 from tqdm import tqdm
+import torch
 import modal
 
 
-cuda_version = "12.4.0"  # should be no greater than host CUDA version
-flavor = "devel"  # includes full CUDA toolkit
+cuda_version = "12.4.0" # no greater than host CUDA version
+flavor = "devel" # full CUDA toolkit
 operating_sys = "ubuntu22.04"
 tag = f"{cuda_version}-{flavor}-{operating_sys}"
 
@@ -21,41 +23,49 @@ cuda_dev_image = modal.Image.from_registry(
     f"nvidia/cuda:{tag}", add_python="3.11"
 ).entrypoint([])
 
+stable_fast3d_commit_sha = "2b35658e6fa41df4171f15d8696102c62845f16a"
+
 image = (
     cuda_dev_image.apt_install(
         "git",
-        "libglib2.0-0",
-        "libsm6",
-        "libxrender1",
-        "libxext6",
-        "ffmpeg",
-        "libgl1",
         "build-essential",
-        "g++",
         "ninja-build",
+        "libgl1",
+        "ffmpeg",
+        "clang",
+        "g++",
     )
     .pip_install(
         "huggingface_hub[hf_transfer]==0.26.2",
         "setuptools==69.5.1",
         "wheel",
         "torch==2.5.1",
+        "numpy<2",
     )
-    .run_commands("git clone https://github.com/Stability-AI/stable-fast-3d.git stable-fast-3d")
+    .env({
+        "USE_CUDA": "1"
+    })
+    .run_commands(f"git clone https://github.com/Stability-AI/stable-fast-3d.git stable-fast-3d")
     .workdir("/stable-fast-3d")
+    .run_commands(f"git checkout {stable_fast3d_commit_sha}")
     .run_commands("pip install -r requirements.txt")
-    .run_commands("pip install .")
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .workdir("/stable-fast-3d/texture_baker")
+    .run_commands("python setup.py install")
+    .workdir("/")
+    .env({
+        "PYTHONPATH": "/stable-fast-3d",
+        "HF_HUB_ENABLE_HF_TRANSFER": "1",
+    })
 )
 
-app = modal.App("stable-fast-3d", image=image)
-
 with image.imports():
-    import torch
     from sf3d.system import SF3D
     from sf3d.utils import remove_background, resize_foreground
-
+    import rembg
 
 MINUTES = 60  # seconds
+
+app = modal.App("stable-fast-3d", image=image)
 
 @dataclass
 class Config:
@@ -66,12 +76,17 @@ class Config:
     batch_size: int = 1
 
 @app.cls(
-    gpu="H100",  # fastest GPU on Modal
+    gpu="A10G",
     container_idle_timeout=20 * MINUTES,
-    timeout=60 * MINUTES,  # leave plenty of time for compilation
+    timeout=10 * MINUTES,
+    secrets=[modal.Secret.from_name("huggingface-token")],
 )
 class Model:
     def setup_model(self):
+        import os
+        import huggingface_hub
+        huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+
         model = SF3D.from_pretrained(
             "stabilityai/stable-fast-3d",
             config_name="config.yaml",
@@ -96,24 +111,22 @@ class Model:
         return image
 
     @modal.method()
-    def inference(self, images: list[Image.Image], **cfg_kwargs):
+    def inference(self, images: list[Image.Image] | Image.Image, **cfg_kwargs):
         config = Config(**cfg_kwargs)
+        if not isinstance(images, list): images = [images]
         images = [self.preprocess_image(image, config) for image in images]
 
         mesh_bytes = []
         for i in tqdm(range(0, len(images), config.batch_size)):
             image_batch = images[i : i + config.batch_size]
             torch.cuda.reset_peak_memory_stats()
-            with torch.no_grad():
-                with torch.autocast(
-                    device_type="cuda", dtype=torch.float16
-                ):
-                    meshes, _ = self.model.run_image(
-                        image_batch,
-                        bake_resolution=config.texture_resolution,
-                        remesh=config.remesh_option,
-                        vertex_count=config.target_vertex_count,
-                    )
+            with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.float16):
+                meshes, _ = self.model.run_image(
+                    image_batch,
+                    bake_resolution=config.texture_resolution,
+                    remesh=config.remesh_option,
+                    vertex_count=config.target_vertex_count,
+                )
             print("🔦 Peak Memory:", torch.cuda.max_memory_allocated() / 1024 / 1024, "MB")
 
             if len(meshes) == 1:
