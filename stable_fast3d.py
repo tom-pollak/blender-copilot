@@ -43,14 +43,14 @@ image = (
         "numpy<2",
     )
     .env({
-        "USE_CUDA": "1"
+        # For texture baker
+        "USE_CUDA": "1",
+        "TORCH_CUDA_ARCH_LIST": "7.0;7.5;8.0;8.6",
     })
     .run_commands(f"git clone https://github.com/Stability-AI/stable-fast-3d.git stable-fast-3d")
     .workdir("/stable-fast-3d")
     .run_commands(f"git checkout {stable_fast3d_commit_sha}")
     .run_commands("pip install -r requirements.txt")
-    .workdir("/stable-fast-3d/texture_baker")
-    .run_commands("python setup.py install")
     .workdir("/")
     .env({
         "PYTHONPATH": "/stable-fast-3d",
@@ -78,7 +78,7 @@ class Config:
 @app.cls(
     gpu="A10G",
     container_idle_timeout=20 * MINUTES,
-    timeout=10 * MINUTES,
+    timeout=20 * MINUTES,
     secrets=[modal.Secret.from_name("huggingface-token")],
 )
 class Model:
@@ -111,7 +111,7 @@ class Model:
         return image
 
     @modal.method()
-    def inference(self, images: list[Image.Image] | Image.Image, **cfg_kwargs):
+    def inference(self, images: list[Image.Image] | Image.Image, **cfg_kwargs) -> list[bytes]:
         config = Config(**cfg_kwargs)
         if not isinstance(images, list): images = [images]
         images = [self.preprocess_image(image, config) for image in images]
@@ -129,7 +129,7 @@ class Model:
                 )
             print("🔦 Peak Memory:", torch.cuda.max_memory_allocated() / 1024 / 1024, "MB")
 
-            if len(meshes) == 1:
+            if type(meshes) != list:
                 meshes = [meshes]
 
             for mesh in meshes:
@@ -143,9 +143,10 @@ class Model:
 def main(image_path: str):
     t0 = time.time()
     image = Image.open(image_path)
-    image_bytes = Model().inference.remote(image)
+    meshes_bytes = Model().inference.remote([image, image])
     print(f"🎨 inference latency: {time.time() - t0:.2f} seconds")
-    output_path = Path("/tmp") / "stable-fast-3d" / "output.glb"
-    output_path.parent.mkdir(exist_ok=True, parents=True)
-    print(f"🎨 saving output to {output_path}")
-    output_path.write_bytes(image_bytes)
+    output_dir = Path("/tmp") / "stable-fast-3d"
+    output_dir.mkdir(exist_ok=True, parents=True)
+    print(f"🎨 saving output to {output_dir}")
+    for i, mesh_bytes in enumerate(meshes_bytes):
+        (output_dir / f"output_{i}.glb").write_bytes(mesh_bytes)
