@@ -111,7 +111,7 @@ class Model:
         return image
 
     @modal.method()
-    def inference(self, images: list[Image.Image] | Image.Image, **cfg_kwargs) -> list[bytes]:
+    def generate(self, images: list[Image.Image] | Image.Image, **cfg_kwargs) -> list[bytes]:
         config = Config(**cfg_kwargs)
         if not isinstance(images, list): images = [images]
         images = [self.preprocess_image(image, config) for image in images]
@@ -143,7 +143,7 @@ class Model:
 def main(image_path: str):
     t0 = time.time()
     image = Image.open(image_path)
-    meshes_bytes = Model().inference.remote([image, image])
+    meshes_bytes = Model().generate.remote([image, image])
     print(f"🎨 inference latency: {time.time() - t0:.2f} seconds")
     output_dir = Path("/tmp") / "stable-fast-3d"
     output_dir.mkdir(exist_ok=True, parents=True)
