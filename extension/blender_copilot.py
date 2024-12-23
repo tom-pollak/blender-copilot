@@ -51,7 +51,7 @@ logger = setup_logger()
 #   "resolution": "512"/"1024"/"2048",
 #   "status": "running"/"done"/"error"/"cancelled",
 #   "thread": <Thread>,
-#   "result_file": "/path/to/generated.glb" or None,
+#   "result_files": ["/path/to/generated.glb", "/path/to/generated.glb", ...] or [],
 # }
 
 # ------------------------------------------------------------------------
@@ -61,18 +61,16 @@ def generate(job):
     import requests
     import msgpack
 
-    # If you want to handle cancellation gracefully, you'll need more robust checks.
-    # For simplicity, we'll just do a single request here.
     try:
-        # Example: passing the image if user selected "use_image"
-        files_param = {}
+        files_param = {
+            "remesh_option": job["resampler"],
+            "texture_resolution": job["resolution"],
+        }
         if job["use_image"] and job["image_path"] and os.path.isfile(job["image_path"]):
-            files_param = {
-                "images": open(job["image_path"], "rb")
-            }
+            with open(job["image_path"], "rb") as image_file:
+                files_param["images"] = image_file.read()
 
         logger.info(f"[generate] Requesting {job['text_prompt']}")
-        # You might also want to pass in other fields (text_prompt, style_image, etc.)
         response = requests.post(
             "https://tom-pollak--stable-fast-3d-model-generate-endpoint-dev.modal.run",
             headers={"Authorization": "Bearer gsOqcfflD-j50tX0OY7vemBkVUeY9k6V"},
@@ -83,26 +81,19 @@ def generate(job):
             logger.info(f"[generate] Response: {response.status_code}")
             glb_files = msgpack.unpackb(response.content)
 
-            # Create an output directory if you want to store the results
-            out_dir = "/Users/tom/fun/stable-fast-3d/output"
+            out_dir = os.path.join(bpy.app.tempdir, f"bcopilot_job_{job['id']}")
             if not os.path.exists(out_dir):
                 os.makedirs(out_dir)
 
-            # Write out each glb in out_dir with a unique name
             out_paths = []
             for idx, glb_data in enumerate(glb_files):
-                out_path = os.path.join(out_dir, f"mesh_{job['id']}_{idx}.glb")
+                out_path = os.path.join(out_dir, f"mesh_{idx}.glb")
                 with open(out_path, "wb") as f:
                     f.write(glb_data)
                 logger.info(f"[generate] Wrote {out_path}")
                 out_paths.append(out_path)
 
-            # Let the job know which single glb file to import as the "result"
-            if out_paths:
-                job["result_file"] = out_paths[0]  # pick the first one as the main
-            else:
-                job["result_file"] = None
-
+            job["result_files"] = out_paths
             job["status"] = "done"
         else:
             # If the response is not 200, treat as error
@@ -138,7 +129,7 @@ def create_new_job(
         "resolution": resolution,
         "status": "running",
         "thread": None,
-        "result_file": None,
+        "result_files": [],
     }
     logger.debug(f"Parameters: {new_job}")
 
@@ -202,22 +193,22 @@ class BCOPILOT_Properties(bpy.types.PropertyGroup):
         subtype="FILE_PATH",
     )
 
-    use_scene_style: bpy.props.BoolProperty(
-        name="Use Scene Style",
-        description="Render the current scene/camera as a style image to pass in",
-        default=False,
-    )
+    # use_scene_style: bpy.props.BoolProperty(
+    #     name="Use Scene Style",
+    #     description="Render the current scene/camera as a style image to pass in",
+    #     default=False,
+    # )
 
     # Resampler dropdown
     resampler: bpy.props.EnumProperty(
         name="Resampler",
         description="Choose how to resample the mesh or textures",
         items=[
-            ("TRIANGLE", "Triangle", "Use triangle resampling (default)"),
-            ("QUAD", "Quad", "Use quad-based resampling"),
-            ("NONE", "None", "No resampling"),
+            ("triangle", "Triangle", "Use triangle resampling (default)"),
+            ("quad", "Quad", "Use quad-based resampling"),
+            ("none", "None", "No resampling"),
         ],
-        default="TRIANGLE",
+        default="triangle",
     )
 
     # Resolution dropdown
@@ -225,7 +216,6 @@ class BCOPILOT_Properties(bpy.types.PropertyGroup):
         name="Resolution",
         description="Output resolution for generated textures/meshes",
         items=[
-            ("512", "512", ""),
             ("1024", "1024", "(default)"),
             ("2048", "2048", ""),
             ("4096", "4096", ""),
@@ -259,7 +249,7 @@ class BCOPILOT_OT_CreateJob(bpy.types.Operator):
             text_prompt=props.text_prompt,
             use_image=props.use_image,
             image_path=props.image_path,
-            use_scene_style=props.use_scene_style,
+            use_scene_style=False,
             resampler=props.resampler,
             resolution=props.resolution,
         )
@@ -294,19 +284,23 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
             self.report({"WARNING"}, "Job is not finished yet.")
             return {"CANCELLED"}
 
-        result_file = job["result_file"]
-        if not result_file or not os.path.isfile(result_file):
-            # Possibly it's a dummy or missing path
-            self.report({"ERROR"}, f"No valid result file found for job {job['id']}.")
+        result_files = job["result_files"]
+        if not result_files:
+            self.report({"ERROR"}, f"No valid result files found for job {job['id']}.")
             return {"CANCELLED"}
 
-        # Import the GLB
-        try:
-            bpy.ops.import_scene.gltf(filepath=result_file)
-            imported_objs = bpy.context.selected_objects
-        except Exception as e:
-            self.report({"ERROR"}, f"Failed to import: {e}")
-            return {"CANCELLED"}
+        imported_objs = []
+        for result_file in result_files:
+            if not os.path.isfile(result_file):
+                self.report({"ERROR"}, f"Result file {result_file} is missing.")
+                return {"CANCELLED"}
+
+            try:
+                bpy.ops.import_scene.gltf(filepath=result_file)
+                imported_objs.extend(bpy.context.selected_objects)
+            except Exception as e:
+                self.report({"ERROR"}, f"Failed to import: {e}")
+                return {"CANCELLED"}
 
         # Place them in a row around (0, 0, 2)
         base_location = (0, 0, 2)
@@ -314,9 +308,12 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
             # e.g. put each object 2 Blender units offset in X
             obj.location = (base_location[0] + i*2, base_location[1], base_location[2])
 
-        # Remove the job from the list now that it's applied
-        jobs.remove(job)
+        # Remove temporary files
+        for result_file in result_files:
+            if os.path.exists(result_file):
+                os.remove(result_file)
 
+        jobs.remove(job)
         self.report({"INFO"}, f"Applied job {job['id']}.")
         return {"FINISHED"}
 
@@ -371,18 +368,27 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
             row.label(text="Image path:")
             row.prop(props, "image_path", text="")
 
+        # row = box.row()
+        # row.prop(props, "use_scene_style", text="Use Scene Style?")
+
+        # Add collapsible advanced section
+        box = layout.box()
         row = box.row()
-        row.prop(props, "use_scene_style", text="Use Scene Style?")
+        row.prop(context.scene, "bcopilot_show_advanced",
+                icon="TRIA_DOWN" if context.scene.bcopilot_show_advanced else "TRIA_RIGHT",
+                icon_only=True, emboss=False)
+        row.label(text="More Options")
 
-        row = box.row().split(factor=0.28)
-        row.label(text="Resampler:")
-        row.prop(props, "resampler", text="")
+        if context.scene.bcopilot_show_advanced:
+            row = box.row().split(factor=0.28)
+            row.label(text="Resampler:")
+            row.prop(props, "resampler", text="")
 
-        row = box.row().split(factor=0.28)
-        row.label(text="Resolution:")
-        row.prop(props, "resolution", text="")
+            row = box.row().split(factor=0.28)
+            row.label(text="Resolution:")
+            row.prop(props, "resolution", text="")
 
-        box.operator("bcopilot.create_job", text="Start Generation")
+        layout.operator("bcopilot.create_job", text="Start Generation")
 
         layout.separator()
         layout.label(
@@ -447,8 +453,7 @@ def register_addon_classes():
         bpy.utils.register_class(cls)
 
     bpy.types.Scene.bcopilot_props = bpy.props.PointerProperty(type=BCOPILOT_Properties)
-
-    # Register our job-check timer
+    bpy.types.Scene.bcopilot_show_advanced = bpy.props.BoolProperty(default=False)
     bpy.app.timers.register(check_jobs)
 
 
@@ -457,6 +462,7 @@ def unregister_addon_classes():
         bpy.utils.unregister_class(cls)
 
     del bpy.types.Scene.bcopilot_props
+    del bpy.types.Scene.bcopilot_show_advanced
 
 
 if __name__ == "__main__":
