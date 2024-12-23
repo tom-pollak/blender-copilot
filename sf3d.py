@@ -2,17 +2,24 @@
 # type: ignore
 # fmt: off
 
+import os
+import io
 import time
 from typing import Literal
-from dataclasses import dataclass
 from pathlib import Path
 from PIL import Image
 from io import BytesIO
+
+from pydantic import BaseModel, Field
 
 from tqdm import tqdm
 import torch
 import modal
 
+from fastapi import Body, Depends, HTTPException, status, Request, File, UploadFile
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import Response
+import msgpack
 
 cuda_version = "12.4.0" # no greater than host CUDA version
 flavor = "devel" # full CUDA toolkit
@@ -36,11 +43,14 @@ image = (
         "g++",
     )
     .pip_install(
-        "huggingface_hub[hf_transfer]==0.26.2",
         "setuptools==69.5.1",
         "wheel",
+        "huggingface_hub[hf_transfer]==0.26.2",
         "torch==2.5.1",
         "numpy<2",
+        "pydantic==2.10.4",
+        "fastapi[standard]",
+        "msgpack==1.1.0",
     )
     .env({
         # For texture baker
@@ -65,21 +75,27 @@ with image.imports():
 
 MINUTES = 60  # seconds
 
+auth_scheme = HTTPBearer()
 app = modal.App("stable-fast-3d", image=image)
 
-@dataclass
-class Config:
-    texture_resolution: int = 1024
+
+class GenerationConfig(BaseModel):
+    model_config = {
+        "extra": "forbid"
+    }
+    texture_resolution: Literal[1024, 2048, 4096] = 1024
     remesh_option: Literal["none", "triangle", "quad"] = "triangle"
     target_vertex_count: int = -1
-    foreground_ratio: float = 0.85
+    foreground_ratio: float = Field(default=0.85, ge=0, le=1)
     batch_size: int = 1
+
 
 @app.cls(
     gpu="A10G",
     container_idle_timeout=20 * MINUTES,
     timeout=20 * MINUTES,
-    secrets=[modal.Secret.from_name("huggingface-token")],
+    secrets=[modal.Secret.from_name("huggingface-token"),
+             modal.Secret.from_name("api-token")],
 )
 class Model:
     def setup_model(self):
@@ -105,15 +121,13 @@ class Model:
         self.model = model.to("cuda")
         self.rembg_session = rembg_session
 
-    def preprocess_image(self, image: Image.Image, config: Config) -> Image.Image:
+    def preprocess_image(self, image: Image.Image, config: GenerationConfig) -> Image.Image:
         image = remove_background(image.convert("RGBA"), self.rembg_session)
         image = resize_foreground(image, config.foreground_ratio)
         return image
 
     @modal.method()
-    def generate(self, images: list[Image.Image] | Image.Image, **cfg_kwargs) -> list[bytes]:
-        config = Config(**cfg_kwargs)
-        if not isinstance(images, list): images = [images]
+    def generate(self, images: list[Image.Image], config: GenerationConfig) -> list[bytes]:
         images = [self.preprocess_image(image, config) for image in images]
 
         mesh_bytes = []
@@ -139,14 +153,95 @@ class Model:
 
         return mesh_bytes
 
+
+    @modal.web_endpoint(method="POST")
+    async def generate_3d(
+        self,
+        request: Request,
+        token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+        images: list[UploadFile] = File(...),
+        config: dict = Body(default={}),
+    ):
+        """Generate 3D models from uploaded images"""
+        if token.credentials != os.environ["API_TOKEN"]:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Convert dict to GenerationConfig
+        try:
+            generation_config = GenerationConfig(**config)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid generation config: {str(e)}"
+            )
+
+        pil_images = []
+        if isinstance(images, UploadFile):
+            images = [images]
+        for img_file in images:
+            try:
+                img_data = await img_file.read()
+                image = Image.open(io.BytesIO(img_data))
+                pil_images.append(image)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid image in upload: {str(e)}"
+                )
+
+        if not pil_images:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid images provided"
+            )
+
+        try:
+            mesh_bytes = self.generate.remote(
+                images=pil_images,
+                config=generation_config
+            )
+            return Response(
+                content=msgpack.packb(mesh_bytes),
+                media_type="application/x-msgpack"
+            )
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Generation failed: {str(e)}"
+            )
+
+@app.function(secrets=[modal.Secret.from_name("api-token")])
+@modal.web_endpoint(method="GET")
+async def healthcheck(
+    request: Request,
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+):
+    """Simple healthcheck endpoint"""
+    if token.credentials != os.environ["API_TOKEN"]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {"status": "healthy"}
+
 @app.local_entrypoint()
 def main(image_path: str):
     t0 = time.time()
     image = Image.open(image_path)
-    meshes_bytes = Model().generate.remote([image, image])
+    meshes_bytes = Model().generate.remote([image], config=GenerationConfig())
     print(f"🎨 inference latency: {time.time() - t0:.2f} seconds")
     output_dir = Path("/tmp") / "stable-fast-3d"
     output_dir.mkdir(exist_ok=True, parents=True)
     print(f"🎨 saving output to {output_dir}")
     for i, mesh_bytes in enumerate(meshes_bytes):
         (output_dir / f"output_{i}.glb").write_bytes(mesh_bytes)
+
+
+if __name__ == "__main__":
+    app.run()
