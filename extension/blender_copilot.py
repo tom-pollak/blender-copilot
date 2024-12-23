@@ -95,18 +95,25 @@ def generate(job):
 
             job["results"] = out_paths
             job["status"] = "done"
-            bpy.ops.wm.report_info({'INFO'}, f"Job {job['id']} finished.")
+            job["notification"] = f"Job {job['id']} finished successfully."
         else:
-            # If the response is not 200, treat as error
-            logger.error(f"[generate] Request failed: {response.status_code} {response.text}")
+            error_msg = f"Request failed: {response.status_code} {response.text}"
+            logger.error(f"[generate] {error_msg}")
             job["status"] = "error"
-            bpy.ops.wm.report_info({'ERROR'}, f"Job {job['id']} failed: {response.text}")
+            job["error_message"] = error_msg
     except Exception as e:
-        logger.error(f"[generate] Exception: {e}")
+        error_msg = str(e)
+        logger.error(f"[generate] Exception: {error_msg}")
         job["status"] = "error"
-        bpy.ops.wm.report_info({'ERROR'}, f"Job {job['id']} failed: {e}")
+        job["error_message"] = error_msg
 
-    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1) # Redraw the UI
+    # Force UI refresh - redraw only the Copilot panel
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'UI':
+                        region.tag_redraw()
 
 # ------------------------------------------------------------------------
 # Utility: Create a new job
@@ -425,6 +432,20 @@ def cancel_job(job):
         if job in jobs:
             jobs.remove(job)
 
+def redraw_ui():
+    """Force UI refresh - redraw only the Copilot panel"""
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'UI':
+                        region.tag_redraw()
+
+def show_message(message, title="Message", icon='INFO'):
+    def draw(self, context):
+        self.layout.label(text=message)
+
+    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
 
 def check_jobs():
     """Check if any job threads have finished or errored."""
@@ -432,11 +453,26 @@ def check_jobs():
     for job in jobs:
         if job["thread"] is not None:
             if job["thread"].is_alive():
-                # Optionally check if job["status"] == "cancelled"
                 continue
-            # If thread is dead but status is still "running", mark as "error"
+
+            # Thread is finished, check status and show notification
             if job["status"] == "running":
                 job["status"] = "error"
+                job["error_message"] = "Job terminated unexpectedly"
+
+            # Show notification if needed
+            if job["status"] == "error" and "error_message" in job:
+                logger.error(f"Job {job['id']} failed: {job['error_message']}")
+                show_message(f"Job {job['id']} failed: {job['error_message']}", title="Error", icon='ERROR')
+            elif job["status"] == "done" and "notification" in job:
+                logger.info(f"Job {job['id']} completed successfully")
+                show_message(job["notification"], title="Success", icon='INFO')
+
+            # Clear notification flags
+            job.pop("error_message", None)
+            job.pop("notification", None)
+
+    redraw_ui()
     return 0.5  # check again in half a second
 
 
@@ -467,7 +503,3 @@ def unregister_addon_classes():
 
     del bpy.types.Scene.bcopilot_props
     del bpy.types.Scene.bcopilot_show_advanced
-
-
-if __name__ == "__main__":
-    register()
