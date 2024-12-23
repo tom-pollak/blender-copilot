@@ -346,9 +346,86 @@ class BCOPILOT_OT_CancelJob(bpy.types.Operator):
             self.report({"ERROR"}, "Job not found.")
             return {"CANCELLED"}
 
-        cancel_job(job)
-        self.report({"INFO"}, f"Cancelled job {job['id']}.")
+        if job["status"] == "running":
+            self.report({"INFO"}, f"Cancelled job {job['id']}.")
+
+        remove_job(job)
         return {"FINISHED"}
+
+
+# ------------------------------------------------------------------------
+# Operator: Notification Watcher
+# ------------------------------------------------------------------------
+class BCOPILOT_OT_StatusNotification(bpy.types.Operator):
+    """Operator just to display a banner notification"""
+    bl_idname = "bcopilot.status_notification"
+    bl_label = "Copilot Notification"
+
+    message: bpy.props.StringProperty(
+        name="Message",
+        description="Message to display",
+        default="Notification"
+    )
+
+    def execute(self, context):
+        logger.info(f"[Status Notification] {self.message}")
+        self.report({'INFO'}, self.message)
+        return {'FINISHED'}
+
+
+class BCOPILOT_OT_NotificationWatcher(bpy.types.Operator):
+    """Modal operator that watches for job status changes and shows notifications"""
+    bl_idname = "bcopilot.notification_watcher"
+    bl_label = "Notification Watcher"
+
+    _timer = None
+
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            global jobs
+            for job in jobs:
+                if job["thread"] is not None and not job["thread"].is_alive() and job["status"] == "running":
+                    logger.info(f"[Notification Watcher] Job {job['id']} failed unexpectedly!")
+                    job["status"] = "error"
+                    bpy.ops.bcopilot.status_notification(message=f"Job {job['id']} failed unexpectedly!")
+                elif job["status"] == "error" and "error_message" in job:
+                    logger.info(f"[Notification Watcher] Job {job['id']} failed: {job['error_message']}")
+                    bpy.ops.bcopilot.status_notification(message=f"Job {job['id']} failed: {job['error_message']}")
+                    job.pop("error_message")
+                elif job["status"] == "done" and not job["thread"].is_alive():
+                    logger.info(f"[Notification Watcher] Job {job['id']} completed successfully.")
+                    bpy.ops.bcopilot.status_notification(message=f"Job {job['id']} completed successfully.")
+                    job.pop("notification")
+        return {"PASS_THROUGH"}
+
+    def execute(self, context):
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
+
+def start_notification_watcher():
+    """
+    Deferred function to start the Notification Watcher with a simple call
+    that doesn't require a complex override dictionary.
+    """
+    def _start():
+        try:
+            # Start the operator with EXEC_DEFAULT so it doesn't need a special UI context.
+            bpy.ops.bcopilot.notification_watcher('EXEC_DEFAULT')
+            logger.info("Started notification watcher")
+        except Exception as e:
+            logger.error(f"Failed to start notification watcher: {e}")
+
+        # Return None so this timer callback runs once and then is removed.
+        return None
+
+    # Schedule _start to run after 0.5 seconds, giving Blender time to finish loading UI, etc.
+    bpy.app.timers.register(_start, first_interval=0.5)
 
 
 # ------------------------------------------------------------------------
@@ -423,14 +500,10 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
 # ------------------------------------------------------------------------
 # Timer handler
 # ------------------------------------------------------------------------
-def cancel_job(job):
-    """Mark the job as cancelled if it's running, or remove if done/error."""
-    if job["status"] == "running" and job["thread"] and job["thread"].is_alive():
-        job["status"] = "cancelled"
-    else:
-        global jobs
-        if job in jobs:
-            jobs.remove(job)
+def remove_job(job):
+    global jobs
+    if job in jobs:
+        jobs.remove(job)
 
 def redraw_ui():
     """Force UI refresh - redraw only the Copilot panel"""
@@ -441,41 +514,6 @@ def redraw_ui():
                     if region.type == 'UI':
                         region.tag_redraw()
 
-def show_message(message, title="Message", icon='INFO'):
-    def draw(self, context):
-        self.layout.label(text=message)
-
-    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
-
-def check_jobs():
-    """Check if any job threads have finished or errored."""
-    global jobs
-    for job in jobs:
-        if job["thread"] is not None:
-            if job["thread"].is_alive():
-                continue
-
-            # Thread is finished, check status and show notification
-            if job["status"] == "running":
-                job["status"] = "error"
-                job["error_message"] = "Job terminated unexpectedly"
-
-            # Show notification if needed
-            if job["status"] == "error" and "error_message" in job:
-                logger.error(f"Job {job['id']} failed: {job['error_message']}")
-                show_message(f"Job {job['id']} failed: {job['error_message']}", title="Error", icon='ERROR')
-            elif job["status"] == "done" and "notification" in job:
-                logger.info(f"Job {job['id']} completed successfully")
-                show_message(job["notification"], title="Success", icon='INFO')
-
-            # Clear notification flags
-            job.pop("error_message", None)
-            job.pop("notification", None)
-
-    redraw_ui()
-    return 0.5  # check again in half a second
-
-
 # ------------------------------------------------------------------------
 # Registration
 # ------------------------------------------------------------------------
@@ -484,22 +522,28 @@ classes = (
     BCOPILOT_OT_CreateJob,
     BCOPILOT_OT_ApplyJobResult,
     BCOPILOT_OT_CancelJob,
+    BCOPILOT_OT_NotificationWatcher,
+    BCOPILOT_OT_StatusNotification,
     BCOPILOT_PT_MainPanel,
 )
 
-
 def register_addon_classes():
     for cls in classes:
-        bpy.utils.register_class(cls)
+        try:
+            bpy.utils.register_class(cls)
+        except Exception as e:
+            logger.error(f"Failed to register {cls.__name__}: {str(e)}")
+            raise
 
     bpy.types.Scene.bcopilot_props = bpy.props.PointerProperty(type=BCOPILOT_Properties)
     bpy.types.Scene.bcopilot_show_advanced = bpy.props.BoolProperty(default=False)
-    bpy.app.timers.register(check_jobs)
+    start_notification_watcher()
+
 
 
 def unregister_addon_classes():
+    redraw_ui()
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-
     del bpy.types.Scene.bcopilot_props
     del bpy.types.Scene.bcopilot_show_advanced
