@@ -16,9 +16,8 @@ from tqdm import tqdm
 import torch
 import modal
 
-from fastapi import Body, Depends, HTTPException, status, Request, File, UploadFile
+from fastapi import Response, Body, Depends, HTTPException, status, Request, File, UploadFile
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import Response
 import msgpack
 
 cuda_version = "12.4.0" # no greater than host CUDA version
@@ -141,7 +140,7 @@ class Model:
                     remesh=config.remesh_option,
                     vertex_count=config.target_vertex_count,
                 )
-            print("🔦 Peak Memory:", torch.cuda.max_memory_allocated() / 1024 / 1024, "MB")
+            print("🔦 Peak Memory:", torch.cuda.max_memory_allocated() / 1024**2, "MB")
 
             if type(meshes) != list:
                 meshes = [meshes]

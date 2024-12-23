@@ -2,8 +2,12 @@
 # type: ignore
 
 import time
+import os
 from io import BytesIO
 from pathlib import Path
+
+from fastapi import Response, Body, Depends, HTTPException, status, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 import modal
 
@@ -42,10 +46,11 @@ flux_image = (
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
 )
 
-flux_image = flux_image.env(
-    {"TORCHINDUCTOR_CACHE_DIR": "/root/.inductor-cache"}
-).env({"TORCHINDUCTOR_FX_GRAPH_CACHE": "1"})
+flux_image = flux_image.env({"TORCHINDUCTOR_CACHE_DIR": "/root/.inductor-cache"}).env(
+    {"TORCHINDUCTOR_FX_GRAPH_CACHE": "1"}
+)
 
+auth_scheme = HTTPBearer()
 app = modal.App("example-flux", image=flux_image)
 
 with flux_image.imports():
@@ -54,18 +59,20 @@ with flux_image.imports():
 
 MINUTES = 60  # seconds
 VARIANT = "schnell"  # or "dev", but note [dev] requires you to accept terms and conditions on HF
-NUM_INFERENCE_STEPS = 4  # use ~50 for [dev], smaller for [schnell]
+NUM_INFERENCE_STEPS = 20  # use ~50 for [dev], smaller for [schnell]
 
 
 @app.cls(
     gpu="H100",  # fastest GPU on Modal
     container_idle_timeout=20 * MINUTES,
     timeout=60 * MINUTES,  # leave plenty of time for compilation
+    secrets=[
+        modal.Secret.from_name("huggingface-token"),
+        modal.Secret.from_name("api-token")
+    ],
     volumes={  # add Volumes to store serializable compilation artifacts, see section on torch.compile below
         "/root/.nv": modal.Volume.from_name("nv-cache", create_if_missing=True),
-        "/root/.triton": modal.Volume.from_name(
-            "triton-cache", create_if_missing=True
-        ),
+        "/root/.triton": modal.Volume.from_name("triton-cache", create_if_missing=True),
         "/root/.inductor-cache": modal.Volume.from_name(
             "inductor-cache", create_if_missing=True
         ),
@@ -77,10 +84,11 @@ class Model:
     )
 
     def setup_model(self):
-        from huggingface_hub import snapshot_download
+        import huggingface_hub
         from transformers.utils import move_cache
 
-        snapshot_download(f"black-forest-labs/FLUX.1-{VARIANT}")
+        huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+        huggingface_hub.snapshot_download(f"black-forest-labs/FLUX.1-{VARIANT}")
 
         move_cache()
 
@@ -101,17 +109,52 @@ class Model:
         self.pipe = optimize(pipe, compile=bool(self.compile))
 
     @modal.method()
-    def inference(self, prompt: str) -> bytes:
+    def inference(self, prompt: str, batch_size: int = 1) -> bytes:
         print("🎨 generating image...")
-        out = self.pipe(
-            prompt,
+        outputs = self.pipe(
+            [prompt] * batch_size,
             output_type="pil",
             num_inference_steps=NUM_INFERENCE_STEPS,
-        ).images[0]
+        ).images
 
-        byte_stream = BytesIO()
-        out.save(byte_stream, format="JPEG")
-        return byte_stream.getvalue()
+        image_bytes = []
+        for image in outputs:
+            byte_stream = BytesIO()
+            image.save(byte_stream, format="PNG")
+            image_bytes.append(byte_stream.getvalue())
+        return image_bytes
+
+    @modal.web_endpoint(method="GET", docs=True)
+    def web(
+        self,
+        request: Request,
+        token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+        prompt: str = Body(...),
+        batch_size: int = Body(...),
+    ):
+        if token.credentials != os.environ["API_TOKEN"]:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if not prompt:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Prompt is required",
+            )
+        if batch_size < 1:
+            return HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Batch size must be at least 1",
+            )
+
+        image_bytes = self.inference.remote(prompt, batch_size=batch_size)
+        return Response(
+            content=msgpack.packb(image_bytes), media_type="application/x-msgpack"
+        )
+
 
 @app.local_entrypoint()
 def main(
@@ -120,20 +163,25 @@ def main(
     " at the screen.",
     twice: bool = True,
     compile: bool = False,
+    batch_size: int = 4,
 ):
     t0 = time.time()
-    image_bytes = Model(compile=compile).inference.remote(prompt)
+    image_bytes = Model(compile=compile).inference.remote(prompt, batch_size=batch_size)
     print(f"🎨 first inference latency: {time.time() - t0:.2f} seconds")
 
     if twice:
         t0 = time.time()
-        image_bytes = Model(compile=compile).inference.remote(prompt)
+        image_bytes = Model(compile=compile).inference.remote(
+            prompt, batch_size=batch_size
+        )
         print(f"🎨 second inference latency: {time.time() - t0:.2f} seconds")
 
-    output_path = Path("/tmp") / "flux" / "output.jpg"
-    output_path.parent.mkdir(exist_ok=True, parents=True)
-    print(f"🎨 saving output to {output_path}")
-    output_path.write_bytes(image_bytes)
+    output_dir = Path("/tmp") / "flux"
+    output_dir.mkdir(exist_ok=True, parents=True)
+    print(f"🎨 saving output to {output_dir}")
+    for i, image_bytes in enumerate(image_bytes):
+        output_path = output_dir / f"output_{i}.png"
+        output_path.write_bytes(image_bytes)
 
 
 def optimize(pipe, compile=True):
