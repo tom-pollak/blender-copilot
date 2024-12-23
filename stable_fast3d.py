@@ -155,7 +155,7 @@ class Model:
 
 
     @modal.web_endpoint(method="POST")
-    async def generate_3d(
+    async def generate_endpoint(
         self,
         request: Request,
         token: HTTPAuthorizationCredentials = Depends(auth_scheme),
