@@ -1,22 +1,11 @@
 # type: ignore
-bl_info = {
-    "name": "Blender Copilot",
-    "author": "Tom Pollak",
-    "version": (1, 3),
-    "blender": (3, 0, 0),
-    "location": "3D View > Sidebar > Copilot",
-    "description": "Prototype with concurrency, optional text/image, resampler, resolution, and scene-style render",
-    "warning": "",
-    "doc_url": "",
-    "category": "3D View",
-}
-
 import bpy
 import os
 import threading
 import time
 from mathutils import Vector
 from datetime import datetime
+import logging
 
 # ------------------------------------------------------------------------
 # Globals
@@ -25,6 +14,30 @@ from datetime import datetime
 MAX_JOBS = 3
 jobs = []
 job_counter = 0
+
+def setup_logger():
+    logger = logging.getLogger('BlenderCopilot')
+    logger.setLevel(logging.DEBUG)
+
+    # Console handler (appears in Blender's system console)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+    console_handler.setFormatter(console_formatter)
+
+    # File handler (writes to a log file in Blender's temp directory)
+    log_file = os.path.join(os.path.dirname(__file__), "blender_copilot.log")
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+    return logger
+
+logger = setup_logger()
 
 # Example job structure:
 # {
@@ -36,7 +49,7 @@ job_counter = 0
 #   "style_image": "/path/to/rendered.png" or None,
 #   "resampler": "TRIANGLE"/"QUAD"/"NONE",
 #   "resolution": "512"/"1024"/"2048",
-#   "status": "queued"/"running"/"done"/"error"/"cancelled",
+#   "status": "running"/"done"/"error"/"cancelled",
 #   "thread": <Thread>,
 #   "result_file": "/path/to/generated.glb" or None,
 # }
@@ -45,11 +58,8 @@ job_counter = 0
 # Generate a 3D model
 # ------------------------------------------------------------------------
 def generate(job):
-    """
-    In a real add-on, you'd replace this with your stable-fast-3d or other 3D generation code.
-    This version makes an HTTP POST request to your Modal endpoint with msgpack response.
-    """
-    job["status"] = "running"
+    import requests
+    import msgpack
 
     # If you want to handle cancellation gracefully, you'll need more robust checks.
     # For simplicity, we'll just do a single request here.
@@ -61,6 +71,7 @@ def generate(job):
                 "images": open(job["image_path"], "rb")
             }
 
+        logger.info(f"[generate] Requesting {job['text_prompt']}")
         # You might also want to pass in other fields (text_prompt, style_image, etc.)
         response = requests.post(
             "https://tom-pollak--stable-fast-3d-model-generate-endpoint-dev.modal.run",
@@ -69,6 +80,7 @@ def generate(job):
         )
 
         if response.status_code == 200:
+            logger.info(f"[generate] Response: {response.status_code}")
             glb_files = msgpack.unpackb(response.content)
 
             # Create an output directory if you want to store the results
@@ -82,6 +94,7 @@ def generate(job):
                 out_path = os.path.join(out_dir, f"mesh_{job['id']}_{idx}.glb")
                 with open(out_path, "wb") as f:
                     f.write(glb_data)
+                logger.info(f"[generate] Wrote {out_path}")
                 out_paths.append(out_path)
 
             # Let the job know which single glb file to import as the "result"
@@ -93,11 +106,11 @@ def generate(job):
             job["status"] = "done"
         else:
             # If the response is not 200, treat as error
-            print(f"[generate] Request failed: {response.status_code} {response.text}")
+            logger.error(f"[generate] Request failed: {response.status_code} {response.text}")
             job["status"] = "error"
 
     except Exception as e:
-        print(f"[generate] Exception: {e}")
+        logger.error(f"[generate] Exception: {e}")
         job["status"] = "error"
 
 # ------------------------------------------------------------------------
@@ -107,8 +120,10 @@ def create_new_job(
     text_prompt, use_image, image_path, use_scene_style, resampler, resolution
 ):
     global jobs, job_counter
+    logger.info(f"[create_new_job] Creating job {job_counter}")
 
     if number_of_active_jobs() >= MAX_JOBS:
+        logger.warning(f"[create_new_job] Maximum of {MAX_JOBS} jobs reached.")
         return None  # can't exceed MAX_JOBS
 
     job_counter += 1
@@ -121,10 +136,11 @@ def create_new_job(
         "style_image": None,
         "resampler": resampler,
         "resolution": resolution,
-        "status": "queued",
+        "status": "running",
         "thread": None,
         "result_file": None,
     }
+    logger.debug(f"Parameters: {new_job}")
 
     # If user wants the scene style, do a quick render on the main thread
     if use_scene_style:
@@ -136,7 +152,7 @@ def create_new_job(
             bpy.context.scene.render.filepath = original_file_path
             new_job["style_image"] = temp_file
         except Exception as e:
-            print(f"[Create Job] Error rendering scene style: {e}")
+            logger.info(f"[Create Job] Error rendering scene style: {e}")
             new_job["style_image"] = None
 
     jobs.append(new_job)
@@ -145,6 +161,8 @@ def create_new_job(
     thread = threading.Thread(target=generate, args=(new_job,))
     new_job["thread"] = thread
     thread.start()
+
+    logger.info(f"[create_new_job] Job {job_counter} started.")
 
     return new_job
 
@@ -424,7 +442,7 @@ classes = (
 )
 
 
-def register():
+def register_addon_classes():
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -434,7 +452,7 @@ def register():
     bpy.app.timers.register(check_jobs)
 
 
-def unregister():
+def unregister_addon_classes():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
