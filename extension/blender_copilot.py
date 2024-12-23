@@ -36,36 +36,69 @@ job_counter = 0
 #   "style_image": "/path/to/rendered.png" or None,
 #   "resampler": "TRIANGLE"/"QUAD"/"NONE",
 #   "resolution": "512"/"1024"/"2048",
-#   "status": "queued"/"running"/"done"/"error",
+#   "status": "queued"/"running"/"done"/"error"/"cancelled",
 #   "thread": <Thread>,
 #   "result_file": "/path/to/generated.glb" or None,
 # }
 
-
 # ------------------------------------------------------------------------
-# Simulation of a long-running generation
+# Generate a 3D model
 # ------------------------------------------------------------------------
-def simulate_generation(job):
+def generate(job):
     """
-    In a real add-on, you'd replace this with your stable-fast-3d or other 3D generation code,
-    using job["text_prompt"], job["image_path"], job["style_image"], job["resampler"], etc.
+    In a real add-on, you'd replace this with your stable-fast-3d or other 3D generation code.
+    This version makes an HTTP POST request to your Modal endpoint with msgpack response.
     """
     job["status"] = "running"
 
-    # Check for cancellation every second
-    for _ in range(5):  # Still simulating 5 seconds total
-        if job["status"] == "cancelled":
-            return
-        time.sleep(1)
+    # If you want to handle cancellation gracefully, you'll need more robust checks.
+    # For simplicity, we'll just do a single request here.
+    try:
+        # Example: passing the image if user selected "use_image"
+        files_param = {}
+        if job["use_image"] and job["image_path"] and os.path.isfile(job["image_path"]):
+            files_param = {
+                "images": open(job["image_path"], "rb")
+            }
 
-    # When done (if not cancelled):
-    if job["status"] != "cancelled":
-        job["status"] = "done"
-        # For demonstration, we just pretend it generated this one dummy file:
-        job["result_file"] = "/Users/tom/fun/stable-fast-3d/output/0/mesh.glb"
+        # You might also want to pass in other fields (text_prompt, style_image, etc.)
+        response = requests.post(
+            "https://tom-pollak--stable-fast-3d-model-generate-endpoint-dev.modal.run",
+            headers={"Authorization": "Bearer gsOqcfflD-j50tX0OY7vemBkVUeY9k6V"},
+            files=files_param
+        )
 
-    self.report({"INFO"}, f"Done job {new_job['id']}.")
+        if response.status_code == 200:
+            glb_files = msgpack.unpackb(response.content)
 
+            # Create an output directory if you want to store the results
+            out_dir = "/Users/tom/fun/stable-fast-3d/output"
+            if not os.path.exists(out_dir):
+                os.makedirs(out_dir)
+
+            # Write out each glb in out_dir with a unique name
+            out_paths = []
+            for idx, glb_data in enumerate(glb_files):
+                out_path = os.path.join(out_dir, f"mesh_{job['id']}_{idx}.glb")
+                with open(out_path, "wb") as f:
+                    f.write(glb_data)
+                out_paths.append(out_path)
+
+            # Let the job know which single glb file to import as the "result"
+            if out_paths:
+                job["result_file"] = out_paths[0]  # pick the first one as the main
+            else:
+                job["result_file"] = None
+
+            job["status"] = "done"
+        else:
+            # If the response is not 200, treat as error
+            print(f"[generate] Request failed: {response.status_code} {response.text}")
+            job["status"] = "error"
+
+    except Exception as e:
+        print(f"[generate] Exception: {e}")
+        job["status"] = "error"
 
 # ------------------------------------------------------------------------
 # Utility: Create a new job
@@ -93,10 +126,8 @@ def create_new_job(
         "result_file": None,
     }
 
-    # If user wants the scene style, do a quick render to a temp file now (on the main thread!).
+    # If user wants the scene style, do a quick render on the main thread
     if use_scene_style:
-        # Attempt a basic render from the active camera
-        # (If there's no camera, user might get an error or blank render)
         temp_file = generate_temp_filepath(prefix="style_image_", ext=".png")
         try:
             original_file_path = bpy.context.scene.render.filepath
@@ -110,8 +141,8 @@ def create_new_job(
 
     jobs.append(new_job)
 
-    # Now spawn the thread to simulate generation
-    thread = threading.Thread(target=simulate_generation, args=(new_job,))
+    # Spawn the thread to do the real generation
+    thread = threading.Thread(target=generate, args=(new_job,))
     new_job["thread"] = thread
     thread.start()
 
@@ -227,7 +258,7 @@ class BCOPILOT_OT_CreateJob(bpy.types.Operator):
 # Operator: Apply Job Result
 # ------------------------------------------------------------------------
 class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
-    """Imports the .glb from the finished job, placing it in front of the current camera."""
+    """Imports the .glb from the finished job, placing all in a row near (0, 0, 2)."""
 
     bl_idname = "bcopilot.apply_job_result"
     bl_label = "Apply Job Result"
@@ -247,7 +278,7 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
 
         result_file = job["result_file"]
         if not result_file or not os.path.isfile(result_file):
-            # Possibly it's a dummy path
+            # Possibly it's a dummy or missing path
             self.report({"ERROR"}, f"No valid result file found for job {job['id']}.")
             return {"CANCELLED"}
 
@@ -259,21 +290,11 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
             self.report({"ERROR"}, f"Failed to import: {e}")
             return {"CANCELLED"}
 
-        # Place them in front of the current camera
-        camera = context.scene.camera
-        if camera:
-            cam_matrix = camera.matrix_world
-            offset_distance = 5.0
-            # camera looks along -Z in local space
-            forward_vec = -cam_matrix.col[2].xyz.normalized()
-            target_location = cam_matrix.translation + forward_vec * offset_distance
-
-            for obj in imported_objs:
-                obj.location = target_location
-        else:
-            # fallback location if no camera
-            for obj in imported_objs:
-                obj.location = (0, 0, 2)
+        # Place them in a row around (0, 0, 2)
+        base_location = (0, 0, 2)
+        for i, obj in enumerate(imported_objs):
+            # e.g. put each object 2 Blender units offset in X
+            obj.location = (base_location[0] + i*2, base_location[1], base_location[2])
 
         # Remove the job from the list now that it's applied
         jobs.remove(job)
@@ -322,7 +343,6 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="Generation Settings", icon="RENDER_STILL")
-        # row = box.row().split(factor=label_split)
         box.label(text="Prompt:")
         box.prop(props, "text_prompt", text="")
 
@@ -346,7 +366,6 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
 
         box.operator("bcopilot.create_job", text="Start Generation")
 
-        # Active jobs
         layout.separator()
         layout.label(
             text=f"Active Jobs (max {MAX_JOBS}): {number_of_active_jobs()}", icon="INFO"
@@ -357,7 +376,7 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
             row.label(text=f"Job {job['id']}")
             row.label(text=f"Status: {job['status']}")
 
-            # Add cancel button
+            # Cancel button
             op = row.operator("bcopilot.cancel_job", text="", icon='X')
             op.job_id = job["id"]
 
@@ -370,16 +389,14 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
 # Timer handler
 # ------------------------------------------------------------------------
 def cancel_job(job):
-    """Cancel a running or finished job."""
+    """Mark the job as cancelled if it's running, or remove if done/error."""
     if job["status"] == "running" and job["thread"] and job["thread"].is_alive():
-        # Can't actually kill threads in Python, but we can mark it as cancelled
-        # and handle that in simulate_generation
         job["status"] = "cancelled"
     else:
-        # If it's already done or errored, just remove it
         global jobs
         if job in jobs:
             jobs.remove(job)
+
 
 def check_jobs():
     """Check if any job threads have finished or errored."""
@@ -387,11 +404,9 @@ def check_jobs():
     for job in jobs:
         if job["thread"] is not None:
             if job["thread"].is_alive():
-                # Check if job was cancelled
-                if job["status"] == "cancelled":
-                    continue
+                # Optionally check if job["status"] == "cancelled"
                 continue
-            # If the thread is dead and the job is still "running", it might have ended unexpectedly
+            # If thread is dead but status is still "running", mark as "error"
             if job["status"] == "running":
                 job["status"] = "error"
     return 0.5  # check again in half a second
