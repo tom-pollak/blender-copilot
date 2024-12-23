@@ -51,7 +51,7 @@ logger = setup_logger()
 #   "resolution": "512"/"1024"/"2048",
 #   "status": "running"/"done"/"error"/"cancelled",
 #   "thread": <Thread>,
-#   "result_files": ["/path/to/generated.glb", "/path/to/generated.glb", ...] or [],
+#   "results": ["/path/to/generated.glb", "/path/to/generated.glb", ...] or [],
 # }
 
 # ------------------------------------------------------------------------
@@ -77,8 +77,8 @@ def generate(job):
             files=files_param
         )
 
+        logger.info(f"[generate] Response: {response.status_code}")
         if response.status_code == 200:
-            logger.info(f"[generate] Response: {response.status_code}")
             glb_files = msgpack.unpackb(response.content)
 
             out_dir = os.path.join(bpy.app.tempdir, f"bcopilot_job_{job['id']}")
@@ -93,16 +93,20 @@ def generate(job):
                 logger.info(f"[generate] Wrote {out_path}")
                 out_paths.append(out_path)
 
-            job["result_files"] = out_paths
+            job["results"] = out_paths
             job["status"] = "done"
+            bpy.ops.wm.report_info({'INFO'}, f"Job {job['id']} finished.")
         else:
             # If the response is not 200, treat as error
             logger.error(f"[generate] Request failed: {response.status_code} {response.text}")
             job["status"] = "error"
-
+            bpy.ops.wm.report_info({'ERROR'}, f"Job {job['id']} failed: {response.text}")
     except Exception as e:
         logger.error(f"[generate] Exception: {e}")
         job["status"] = "error"
+        bpy.ops.wm.report_info({'ERROR'}, f"Job {job['id']} failed: {e}")
+
+    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1) # Redraw the UI
 
 # ------------------------------------------------------------------------
 # Utility: Create a new job
@@ -129,7 +133,7 @@ def create_new_job(
         "resolution": resolution,
         "status": "running",
         "thread": None,
-        "result_files": [],
+        "results": [],
     }
     logger.debug(f"Parameters: {new_job}")
 
@@ -145,7 +149,7 @@ def create_new_job(
         except Exception as e:
             logger.info(f"[Create Job] Error rendering scene style: {e}")
             new_job["style_image"] = None
-
+            bpy.ops.wm.report_info({'ERROR'}, f"Error rendering scene style: {e}")
     jobs.append(new_job)
 
     # Spawn the thread to do the real generation
@@ -284,19 +288,19 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
             self.report({"WARNING"}, "Job is not finished yet.")
             return {"CANCELLED"}
 
-        result_files = job["result_files"]
-        if not result_files:
+        results = job["results"]
+        if not results:
             self.report({"ERROR"}, f"No valid result files found for job {job['id']}.")
             return {"CANCELLED"}
 
         imported_objs = []
-        for result_file in result_files:
-            if not os.path.isfile(result_file):
-                self.report({"ERROR"}, f"Result file {result_file} is missing.")
+        for res in results:
+            if not os.path.isfile(res):
+                self.report({"ERROR"}, f"Result file {res} is missing.")
                 return {"CANCELLED"}
 
             try:
-                bpy.ops.import_scene.gltf(filepath=result_file)
+                bpy.ops.import_scene.gltf(filepath=res)
                 imported_objs.extend(bpy.context.selected_objects)
             except Exception as e:
                 self.report({"ERROR"}, f"Failed to import: {e}")
@@ -309,9 +313,9 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
             obj.location = (base_location[0] + i*2, base_location[1], base_location[2])
 
         # Remove temporary files
-        for result_file in result_files:
-            if os.path.exists(result_file):
-                os.remove(result_file)
+        for res in results:
+            if os.path.exists(res):
+                os.remove(res)
 
         jobs.remove(job)
         self.report({"INFO"}, f"Applied job {job['id']}.")
