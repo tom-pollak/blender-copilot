@@ -94,7 +94,7 @@ class GenerationConfig(BaseModel):
     container_idle_timeout=20 * MINUTES,
     timeout=20 * MINUTES,
     secrets=[modal.Secret.from_name("huggingface-token"),
-             modal.Secret.from_name("api-token")],
+             modal.Secret.from_name("blender-api-token")],
 )
 class Model:
     def setup_model(self):
@@ -214,7 +214,7 @@ class Model:
                 detail=f"Generation failed: {str(e)}"
             )
 
-@app.function(secrets=[modal.Secret.from_name("api-token")])
+@app.function(secrets=[modal.Secret.from_name("blender-api-token")])
 @modal.web_endpoint(method="GET")
 async def healthcheck(
     request: Request,

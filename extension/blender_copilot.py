@@ -1,9 +1,6 @@
-# type: ignore
 import bpy
 import os
 import threading
-import time
-from mathutils import Vector
 from datetime import datetime
 import logging
 
@@ -278,7 +275,7 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
 
     job_id: bpy.props.IntProperty()
 
-    def execute(self, context):
+    def execute(self, _):
         global jobs
         job = next((j for j in jobs if j["id"] == self.job_id), None)
         if not job:
@@ -333,7 +330,7 @@ class BCOPILOT_OT_CancelJob(bpy.types.Operator):
 
     job_id: bpy.props.IntProperty()
 
-    def execute(self, context):
+    def execute(self, _):
         global jobs
         job = next((j for j in jobs if j["id"] == self.job_id), None)
         if not job:
@@ -361,7 +358,7 @@ class BCOPILOT_OT_StatusNotification(bpy.types.Operator):
         default="Notification"
     )
 
-    def execute(self, context):
+    def execute(self, _):
         logger.info(f"[Status Notification] {self.message}")
         self.report({'INFO'}, self.message)
         return {'FINISHED'}
@@ -374,7 +371,7 @@ class BCOPILOT_OT_NotificationWatcher(bpy.types.Operator):
 
     _timer = None
 
-    def modal(self, context, event):
+    def modal(self, _, event):
         if event.type == 'TIMER':
             global jobs
             for job in jobs:

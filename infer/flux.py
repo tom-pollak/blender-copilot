@@ -1,10 +1,10 @@
 # %%
-# type: ignore
 
 import time
 import os
 from io import BytesIO
 from pathlib import Path
+import msgpack
 
 from fastapi import Response, Body, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -55,7 +55,7 @@ app = modal.App("example-flux", image=flux_image)
 
 with flux_image.imports():
     import torch
-    from diffusers import FluxPipeline
+    from diffusers import FluxPipeline # type: ignore
 
 MINUTES = 60  # seconds
 VARIANT = "schnell"  # or "dev", but note [dev] requires you to accept terms and conditions on HF
@@ -68,7 +68,7 @@ NUM_INFERENCE_STEPS = 20  # use ~50 for [dev], smaller for [schnell]
     timeout=60 * MINUTES,  # leave plenty of time for compilation
     secrets=[
         modal.Secret.from_name("huggingface-token"),
-        modal.Secret.from_name("api-token")
+        modal.Secret.from_name("blender-api-token")
     ],
     volumes={  # add Volumes to store serializable compilation artifacts, see section on torch.compile below
         "/root/.nv": modal.Volume.from_name("nv-cache", create_if_missing=True),
@@ -84,8 +84,8 @@ class Model:
     )
 
     def setup_model(self):
-        import huggingface_hub
-        from transformers.utils import move_cache
+        import huggingface_hub # type: ignore
+        from transformers.utils import move_cache # type: ignore
 
         huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
         huggingface_hub.snapshot_download(f"black-forest-labs/FLUX.1-{VARIANT}")
@@ -109,7 +109,7 @@ class Model:
         self.pipe = optimize(pipe, compile=bool(self.compile))
 
     @modal.method()
-    def inference(self, prompt: str, batch_size: int = 1) -> bytes:
+    def inference(self, prompt: str, batch_size: int = 1) -> list[bytes]:
         print("🎨 generating image...")
         outputs = self.pipe(
             [prompt] * batch_size,
@@ -127,7 +127,7 @@ class Model:
     @modal.web_endpoint(method="GET", docs=True)
     def web(
         self,
-        request: Request,
+        _request: Request,
         token: HTTPAuthorizationCredentials = Depends(auth_scheme),
         prompt: str = Body(...),
         batch_size: int = Body(...),

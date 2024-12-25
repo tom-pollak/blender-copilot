@@ -1,7 +1,7 @@
 import os
 import sys
 import subprocess
-import pkg_resources
+import pkg_resources # type: ignore
 from pathlib import Path
 
 # The folder containing this file
