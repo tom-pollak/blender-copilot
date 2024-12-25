@@ -1,3 +1,4 @@
+# type: ignore
 import bpy
 import os
 import threading
@@ -7,6 +8,13 @@ import logging
 # ------------------------------------------------------------------------
 # Globals
 # ------------------------------------------------------------------------
+
+SERVER_URL = "http://localhost:5001"
+ENDPOINTS = {
+    "image": "/image_to_3d",
+    "text": "/text_to_3d",
+}
+REQUEST_TIMEOUT = 5 * 60 # 5 minutes
 
 MAX_JOBS = 3
 jobs = []
@@ -59,19 +67,33 @@ def generate(job):
     import msgpack
 
     try:
-        files_param = {
+        endpoint = "image" if job["use_image"] else "text"
+        data = {
             "remesh_option": job["resampler"],
             "texture_resolution": job["resolution"],
+            "batch_size": job["batch_size"],
+            "prompt": job["text_prompt"],
         }
-        if job["use_image"] and job["image_path"] and os.path.isfile(job["image_path"]):
+
+        if job["use_image"]:
+            if not os.path.isfile(job["image_path"]):
+                logger.error(f"[generate] Image file {job['image_path']} not found.")
+                job["status"] = "error"
+                job["error_message"] = f"Image file {job['image_path']} not found."
+                return
+
             with open(job["image_path"], "rb") as image_file:
-                files_param["images"] = image_file.read()
+                files = {"images": image_file.read()}
+        else:
+            files = None
 
         logger.info(f"[generate] Requesting {job['text_prompt']}")
-        response = requests.post(
-            "https://tom-pollak--stable-fast-3d-model-generate-endpoint-dev.modal.run",
-            headers={"Authorization": "Bearer gsOqcfflD-j50tX0OY7vemBkVUeY9k6V"},
-            files=files_param
+        response = requests.get(
+            f"{SERVER_URL}{ENDPOINTS[endpoint]}",
+            headers={"Authorization": "Bearer 1234"},
+            files=files,
+            data=data,
+            timeout=REQUEST_TIMEOUT,
         )
 
         logger.info(f"[generate] Response: {response.status_code}")
@@ -110,7 +132,7 @@ def generate(job):
 # Utility: Create a new job
 # ------------------------------------------------------------------------
 def create_new_job(
-    text_prompt, use_image, image_path, use_scene_style, resampler, resolution
+    text_prompt, use_image, image_path, use_scene_style, resampler, resolution, batch_size
 ):
     global jobs, job_counter
     logger.info(f"[create_new_job] Creating job {job_counter}")
@@ -132,6 +154,7 @@ def create_new_job(
         "status": "running",
         "thread": None,
         "results": [],
+        "batch_size": batch_size,
     }
     logger.debug(f"Parameters: {new_job}")
 
@@ -181,6 +204,16 @@ def number_of_active_jobs():
 class BCOPILOT_Properties(bpy.types.PropertyGroup):
     text_prompt: bpy.props.StringProperty(
         name="Text Prompt", description="Your text prompt for generation", default=""
+    )
+    batch_size: bpy.props.EnumProperty(
+        name="Num Images",
+        description="Number of images to generate",
+        items=[
+            ("1", "1", "1"),
+            ("2", "2", "2"),
+            ("4", "4", "4"),
+        ],
+        default="1",
     )
 
     use_image: bpy.props.BoolProperty(
@@ -254,6 +287,7 @@ class BCOPILOT_OT_CreateJob(bpy.types.Operator):
             use_scene_style=False,
             resampler=props.resampler,
             resolution=props.resolution,
+            batch_size=props.batch_size,
         )
 
         if not new_job:
@@ -308,7 +342,7 @@ class BCOPILOT_OT_ApplyJobResult(bpy.types.Operator):
         base_location = (0, 0, 2)
         for i, obj in enumerate(imported_objs):
             # e.g. put each object 2 Blender units offset in X
-            obj.location = (base_location[0] + i*2, base_location[1], base_location[2])
+            obj.location = (base_location[0] + i*0.25, base_location[1], base_location[2])
 
         # Remove temporary files
         for res in results:
@@ -439,6 +473,10 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
         box.label(text="Generation Settings", icon="RENDER_STILL")
         box.label(text="Prompt:")
         box.prop(props, "text_prompt", text="")
+
+        row = box.row()
+        row.label(text="Num Images:")
+        row.prop(props, "batch_size", text="")
 
         row = box.row()
         row.prop(props, "use_image", text="Use Image?")

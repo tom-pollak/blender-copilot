@@ -42,6 +42,7 @@ flux_image = (
         "torch==2.5.0",
         f"git+https://github.com/huggingface/diffusers.git@{diffusers_commit_sha}",
         "numpy<2",
+        "msgpack==1.1.0",
     )
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
 )
@@ -51,7 +52,7 @@ flux_image = flux_image.env({"TORCHINDUCTOR_CACHE_DIR": "/root/.inductor-cache"}
 )
 
 auth_scheme = HTTPBearer()
-app = modal.App("example-flux", image=flux_image)
+app = modal.App("flux", image=flux_image)
 
 with flux_image.imports():
     import torch
@@ -59,7 +60,7 @@ with flux_image.imports():
 
 MINUTES = 60  # seconds
 VARIANT = "schnell"  # or "dev", but note [dev] requires you to accept terms and conditions on HF
-NUM_INFERENCE_STEPS = 20  # use ~50 for [dev], smaller for [schnell]
+NUM_INFERENCE_STEPS = 25  # use ~50 for [dev], smaller for [schnell]
 
 
 @app.cls(
@@ -124,10 +125,10 @@ class Model:
             image_bytes.append(byte_stream.getvalue())
         return image_bytes
 
-    @modal.web_endpoint(method="GET", docs=True)
+    @modal.web_endpoint(method="POST", docs=True)
     def web(
         self,
-        _request: Request,
+        request: Request,
         token: HTTPAuthorizationCredentials = Depends(auth_scheme),
         prompt: str = Body(...),
         batch_size: int = Body(...),
@@ -197,7 +198,7 @@ def optimize(pipe, compile=True):
         return pipe
 
     # set torch compile flags
-    config = torch._inductor.config
+    config = torch._inductor.config # type: ignore
     config.disable_progress = False  # show progress bar
     config.conv_1x1_as_mm = True  # treat 1x1 convolutions as matrix muls
     # adjust autotuning algorithm

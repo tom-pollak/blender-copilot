@@ -17,4 +17,6 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "python-fasthtml>=0.10.2",
     "sqlite-minutils>=4.0.3",
+    "loguru>=0.7.3",
+    "httpx>=0.28.1",
 ]

@@ -1,7 +1,4 @@
-# ruff: noqa
-# type: ignore
 # fmt: off
-
 import os
 import io
 import time
@@ -56,7 +53,7 @@ image = (
         "USE_CUDA": "1",
         "TORCH_CUDA_ARCH_LIST": "7.0;7.5;8.0;8.6",
     })
-    .run_commands(f"git clone https://github.com/Stability-AI/stable-fast-3d.git stable-fast-3d")
+    .run_commands("git clone https://github.com/Stability-AI/stable-fast-3d.git stable-fast-3d")
     .workdir("/stable-fast-3d")
     .run_commands(f"git checkout {stable_fast3d_commit_sha}")
     .run_commands("pip install -r requirements.txt")
@@ -68,9 +65,9 @@ image = (
 )
 
 with image.imports():
-    from sf3d.system import SF3D
-    from sf3d.utils import remove_background, resize_foreground
-    import rembg
+    from sf3d.system import SF3D # type: ignore
+    from sf3d.utils import remove_background, resize_foreground # type: ignore
+    import rembg # type: ignore
 
 MINUTES = 60  # seconds
 
@@ -99,7 +96,7 @@ class GenerationConfig(BaseModel):
 class Model:
     def setup_model(self):
         import os
-        import huggingface_hub
+        import huggingface_hub # type: ignore
         huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
 
         model = SF3D.from_pretrained(
@@ -126,7 +123,7 @@ class Model:
         return image
 
     @modal.method()
-    def generate(self, images: list[Image.Image], config: GenerationConfig) -> list[bytes]:
+    def inference(self, images: list[Image.Image], config: GenerationConfig) -> list[bytes]:
         images = [self.preprocess_image(image, config) for image in images]
 
         mesh_bytes = []
@@ -142,7 +139,7 @@ class Model:
                 )
             print("🔦 Peak Memory:", torch.cuda.max_memory_allocated() / 1024**2, "MB")
 
-            if type(meshes) != list:
+            if not isinstance(meshes, list):
                 meshes = [meshes]
 
             for mesh in meshes:
@@ -153,8 +150,8 @@ class Model:
         return mesh_bytes
 
 
-    @modal.web_endpoint(method="POST")
-    async def generate_endpoint(
+    @modal.web_endpoint(method="POST", docs=True)
+    async def web(
         self,
         request: Request,
         token: HTTPAuthorizationCredentials = Depends(auth_scheme),
@@ -179,8 +176,6 @@ class Model:
             )
 
         pil_images = []
-        if isinstance(images, UploadFile):
-            images = [images]
         for img_file in images:
             try:
                 img_data = await img_file.read()
@@ -199,7 +194,7 @@ class Model:
             )
 
         try:
-            mesh_bytes = self.generate.remote(
+            mesh_bytes = self.inference.remote(
                 images=pil_images,
                 config=generation_config
             )
@@ -233,7 +228,7 @@ async def healthcheck(
 def main(image_path: str):
     t0 = time.time()
     image = Image.open(image_path)
-    meshes_bytes = Model().generate.remote([image], config=GenerationConfig())
+    meshes_bytes = Model().inference.remote([image], config=GenerationConfig())
     print(f"🎨 inference latency: {time.time() - t0:.2f} seconds")
     output_dir = Path("/tmp") / "stable-fast-3d"
     output_dir.mkdir(exist_ok=True, parents=True)
