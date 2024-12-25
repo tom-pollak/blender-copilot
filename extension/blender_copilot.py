@@ -107,13 +107,7 @@ def generate(job):
         job["status"] = "error"
         job["error_message"] = error_msg
 
-    # Force UI refresh - redraw only the Copilot panel
-    for window in bpy.context.window_manager.windows:
-        for area in window.screen.areas:
-            if area.type == 'VIEW_3D':
-                for region in area.regions:
-                    if region.type == 'UI':
-                        region.tag_redraw()
+    redraw_ui()
 
 # ------------------------------------------------------------------------
 # Utility: Create a new job
