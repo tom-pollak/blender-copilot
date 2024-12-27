@@ -17,6 +17,8 @@ from fastapi import Response, Body, Depends, HTTPException, status, Request, Fil
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import msgpack
 
+from infer.utils import remove_background, resize_foreground
+
 cuda_version = "12.4.0" # no greater than host CUDA version
 flavor = "devel" # full CUDA toolkit
 operating_sys = "ubuntu22.04"
@@ -66,7 +68,6 @@ image = (
 
 with image.imports():
     from sf3d.system import SF3D # type: ignore
-    from sf3d.utils import remove_background, resize_foreground # type: ignore
     import rembg # type: ignore
 
 MINUTES = 60  # seconds
