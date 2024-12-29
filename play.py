@@ -94,6 +94,7 @@ image = (
             "open3d",
             "fire",
             "comet_ml",
+            "peft"
         ]
     )
     .run_commands("git clone https://github.com/facebookresearch/pytorch3d.git")
@@ -115,7 +116,6 @@ image = (
             "HF_HUB_ENABLE_HF_TRANSFER": "1",
         }
     )
-    .pip_install("pydantic==2.10.4")
     .pip_install("fastapi[standard]")
     .pip_install("msgpack==1.1.0")
     .pip_install("huggingface_hub[hf_transfer]")
@@ -138,9 +138,6 @@ app = modal.App("wonder3d-plus", image=image)
 
 
 class GenerationConfig(BaseModel):
-    model_config = {
-        "extra": "forbid",
-    }
     crop_size: int = 192
     camera_type: Literal["ortho", "persp"] = "ortho"
     num_refine: int = 2
@@ -246,7 +243,8 @@ class Model:
         self.setup_model()
 
     @modal.method()
-    def inference(self, image, config: GenerationConfig) -> bytes:
+    def inference(self, image: Image.Image) -> bytes:
+        config = GenerationConfig()
         processed_img = process_image(
             image_input=image, crop_size=config.crop_size * 8, image_size=2048
         )
@@ -339,7 +337,7 @@ class Model:
 def main(image_path: str):
     t0 = time.time()
     image = Image.open(image_path)
-    mesh_bytes = Model().inference.remote(image, GenerationConfig())
+    mesh_bytes = Model().inference.remote(image)
     print(f"🎨 Inference latency: {time.time() - t0:.2f} seconds")
 
     output_dir = Path("outputs")
