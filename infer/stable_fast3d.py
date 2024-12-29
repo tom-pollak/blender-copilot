@@ -4,6 +4,7 @@ import io
 import time
 from typing import Literal
 from pathlib import Path
+from typing_extensions import Annotated
 from PIL import Image
 from io import BytesIO
 
@@ -155,9 +156,9 @@ class Model:
     async def web(
         self,
         request: Request,
-        token: HTTPAuthorizationCredentials = Depends(auth_scheme),
-        images: list[UploadFile] = File(...),
-        config: dict = Body(default={}),
+        token: Annotated[HTTPAuthorizationCredentials, Depends(auth_scheme)],
+        images: list[UploadFile],
+        config: GenerationConfig,
     ):
         """Generate 3D models from uploaded images"""
         if token.credentials != os.environ["API_TOKEN"]:
@@ -167,14 +168,6 @@ class Model:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Convert dict to GenerationConfig
-        try:
-            generation_config = GenerationConfig(**config)
-        except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid generation config: {str(e)}"
-            )
 
         pil_images = []
         for img_file in images:
@@ -197,7 +190,7 @@ class Model:
         try:
             mesh_bytes = self.inference.remote(
                 images=pil_images,
-                config=generation_config
+                config=config,
             )
             return Response(
                 content=msgpack.packb(mesh_bytes),
