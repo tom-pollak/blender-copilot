@@ -1,13 +1,3 @@
-# from huggingface_hub import snapshot_download, hf_hub_download
-
-# file_path = hf_hub_download(
-#     repo_id="abhishek/StableSAM",
-#     filename="sam_vit_h_4b8939.pth",
-#     repo_type="model",
-#     local_dir="sam_pt"
-# )
-# snapshot_download(repo_id='flamehaze1115/Wonder3D_plus', local_dir="./ckpts")
-
 import os
 import io
 import time
@@ -45,6 +35,7 @@ image = (
     cuda_dev_image.apt_install(
         "git",
         "build-essential",
+        "clang",
         "libgl1-mesa-glx",
         "libglib2.0-0",
         "libsm6",
@@ -53,72 +44,66 @@ image = (
         "python3-opengl",
     )
     .pip_install(
-        [
-            "torch==2.1.0",
-            "torchvision",
-            "iopath",
-            "nvdiffrast @ git+https://github.com/NVlabs/nvdiffrast.git",
-            "pillow",
-            "diffusers[torch]==0.30.0",
-            "transformers>=4.25.1",
-            "bitsandbytes==0.35.4",
-            "decord==0.6.0",
-            "pytorch-lightning<2",
-            "omegaconf==2.2.3",
-            "nerfacc==0.3.3",
-            "trimesh==3.9.8",
-            "pyhocon==0.3.57",
-            "icecream==2.1.0",
-            "accelerate",
-            "modelcards",
-            "einops",
-            "ftfy",
-            "piq",
-            "matplotlib",
-            "opencv-python",
-            "imageio",
-            "imageio-ffmpeg",
-            "scipy",
-            "pyransac3d",
-            "torch_efficient_distloss",
-            "tensorboard",
-            "rembg",
-            "segment_anything",
-            "gradio==3.50.2",
-            "mosaicml-streaming",
-            "onnxruntime-gpu==1.17.0",
-            "pyrender",
-            "jaxtyping",
-            "pymeshlab",
-            "cholespy",
-            "open3d",
-            "fire",
-            "comet_ml",
-            "peft"
-        ]
+        "wheel",
+        "torch==2.1.0",
+        "torchvision",
+        "iopath",
+        "nvdiffrast @ git+https://github.com/NVlabs/nvdiffrast.git",
+        "pillow",
+        "diffusers[torch]==0.30.0",
+        "transformers>=4.25.1",
+        "bitsandbytes==0.35.4",
+        "decord==0.6.0",
+        "pytorch-lightning<2",
+        "omegaconf==2.2.3",
+        "nerfacc==0.3.3",
+        "trimesh==3.9.8",
+        "pyhocon==0.3.57",
+        "icecream==2.1.0",
+        "accelerate",
+        "modelcards",
+        "einops",
+        "ftfy",
+        "piq",
+        "matplotlib",
+        "opencv-python",
+        "imageio",
+        "imageio-ffmpeg",
+        "scipy",
+        "pyransac3d",
+        "torch_efficient_distloss",
+        "tensorboard",
+        "rembg",
+        "segment_anything",
+        "gradio==3.50.2",
+        "mosaicml-streaming",
+        "onnxruntime-gpu==1.17.0",
+        "pyrender",
+        "jaxtyping",
+        "pymeshlab",
+        "cholespy",
+        "open3d",
+        "fire",
+        "comet_ml",
+        "peft",
+        "fastapi[standard]",
+        "msgpack==1.1.0",
+        "huggingface_hub[hf_transfer]",
     )
-    .run_commands("git clone https://github.com/facebookresearch/pytorch3d.git")
+    .run_commands("git clone -b tags/V0.7.8 https://github.com/facebookresearch/pytorch3d.git")
     .workdir("/pytorch3d")
-    .run_commands("git checkout V0.7.8")
-    .pip_install("wheel")
-    .apt_install("clang")
     .run_commands("pip install --no-build-isolation .")
     .workdir("/")
     .run_commands(
         "pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cu121.html"
     )
-    .run_commands("git clone https://github.com/xxlong0/Wonder3D.git Wonder3D")
-    .workdir("/Wonder3D")
-    .workdir("/")
+    .run_commands("git clone https://github.com/xxlong0/Wonder3D.git /Wonder3D")
     .env(
         {
             "PYTHONPATH": "/Wonder3D",
             "HF_HUB_ENABLE_HF_TRANSFER": "1",
         }
     )
-    .pip_install("fastapi[standard]")
-    .pip_install("msgpack==1.1.0")
-    .pip_install("huggingface_hub[hf_transfer]")
     .workdir("/Wonder3D")
 )
 
@@ -265,6 +250,7 @@ class Model:
             rgbs=images_pred,
             normals=normals_pred,
             camera_type=config.camera_type,
+            scence_name="scene",
             crop_size=config.crop_size,
         )
 
