@@ -4,24 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
         body {
             background: #080808;
         }
         .main-video {
             width: 100%;
-            height: 70vh;
+            height: 100vh;
             object-fit: cover;
+        }
+        .nav-backdrop {
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+            height: 120px;
+            pointer-events: none;
+        }
+        .nav-content {
+            pointer-events: auto;
         }
     </style>
 </head>
 <body class="text-white">
-    <!-- Top Bar -->
-    <header class="fixed w-full z-50 mix-blend-difference">
-        <div class="flex justify-between items-center py-6 px-12">
-            <span class="text-lg tracking-tight">Blender Copilot</span>
-            <button class="text-sm tracking-wide hover:opacity-80">Login</button>
+    <!-- Top Bar with gradient backdrop -->
+    <header class="fixed w-full z-50">
+        <div class="nav-backdrop absolute w-full"></div>
+        <div class="nav-content flex justify-between items-center py-6 px-12 relative">
+            <span class="text-lg font-medium">Blender Copilot</span>
+            <button class="text-sm px-4 py-2 bg-white/10 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-colors">
+                Login
+            </button>
         </div>
     </header>
 
@@ -36,10 +46,9 @@
             <!-- Overlay Text -->
             <div class="absolute bottom-0 left-0 p-12 w-full bg-gradient-to-t from-black to-transparent">
                 <div class="max-w-3xl">
-                    <h1 class="text-3xl font-medium mb-3">Bring Your Ideas to Life</h1>
-                    <p class="text-gray-400 mb-6">Transform text and images into 3D models instantly using AI</p>
-                    <button class="text-sm px-4 py-2 bg-white text-black rounded hover:bg-opacity-90">
-                        TRY IT OUT FOR FREE
+                    <h1 class="font-medium mb-4 leading-tight" style="font-size: min(6vw, 4rem)">Transform text and images into 3D instantly</h1>
+                    <button class="text-sm sm:text-base whitespace-nowrap px-6 py-3 bg-white text-black rounded-lg font-medium hover:bg-opacity-90 transition-colors">
+                        TRY IT FOR FREE
                     </button>
                 </div>
             </div>
@@ -48,13 +57,12 @@
         <!-- Showcase -->
         <div class="px-12 py-24">
             <div class="max-w-7xl mx-auto">
-                <div class="mb-24 flex items-end justify-between">
-                    <p class="text-sm text-gray-400 max-w-md">
-                        From simple text descriptions to detailed 3D models.
-                        See what others have created with Blender Copilot.
+                <div class="mb-16">
+                    <p class="text-lg text-gray-400 max-w-md">
+                        See what's possible with Blender Copilot
                     </p>
                 </div>
-                <img src="mesh-samples.gif" alt="3D Mesh Samples" class="w-full"/>
+                <img src="mesh-samples.gif" alt="3D Mesh Samples" class="w-full rounded-xl"/>
             </div>
         </div>
     </main>
