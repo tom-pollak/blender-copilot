@@ -19,12 +19,21 @@ from typing_extensions import Annotated
 from io import BytesIO
 import numpy as np
 import modal
-from fastapi import Response, Body, Depends, HTTPException, status, Request, File, UploadFile
+from fastapi import (
+    Response,
+    Body,
+    Depends,
+    HTTPException,
+    status,
+    Request,
+    File,
+    UploadFile,
+)
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
-cuda_version = "12.1.0" # no greater than host CUDA version
-flavor = "devel" # full CUDA toolkit
+cuda_version = "12.1.0"  # no greater than host CUDA version
+flavor = "devel"  # full CUDA toolkit
 operating_sys = "ubuntu22.04"
 tag = f"{cuda_version}-{flavor}-{operating_sys}"
 
@@ -94,32 +103,39 @@ image = (
     .apt_install("clang")
     .run_commands("pip install --no-build-isolation .")
     .workdir("/")
-    .run_commands("pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cu121.html")
+    .run_commands(
+        "pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cu121.html"
+    )
     .run_commands("git clone https://github.com/xxlong0/Wonder3D.git Wonder3D")
     .workdir("/Wonder3D")
     .workdir("/")
-    .env({
-        "PYTHONPATH": "/Wonder3D",
-        "HF_HUB_ENABLE_HF_TRANSFER": "1",
-    })
+    .env(
+        {
+            "PYTHONPATH": "/Wonder3D",
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+        }
+    )
     .pip_install("pydantic==2.10.4")
     .pip_install("fastapi[standard]")
     .pip_install("msgpack==1.1.0")
+    .pip_install("huggingface_hub[hf_transfer]")
+    .workdir("/Wonder3D")
 )
 
 with image.imports():
-    from omegaconf import OmegaConf # type: ignore
-    from run_mv_prediction import pred_multiview_joint # type: ignore
-    from run_mv_enhancement import pred_enhancement_joint # type: ignore
+    from omegaconf import OmegaConf  # type: ignore
+    from run_mv_prediction import pred_multiview_joint  # type: ignore
+    from run_mv_enhancement import pred_enhancement_joint  # type: ignore
 
-    from MVMeshRecon.Coarse_recon import coarse_recon # type: ignore
-    from MVMeshRecon.Iterative_refine import iterative_refine # type: ignore
-    from MVMeshRecon.utils.refine_lr_to_sr import sr_front # type: ignore
-    from rembg import remove # type: ignore
-    from remeshing.util.func import save_obj # type: ignore
+    from MVMeshRecon.Coarse_recon import coarse_recon  # type: ignore
+    from MVMeshRecon.Iterative_refine import iterative_refine  # type: ignore
+    from MVMeshRecon.utils.refine_lr_to_sr import sr_front  # type: ignore
+    from rembg import remove  # type: ignore
+    from remeshing.util.func import save_obj  # type: ignore
 
 auth_scheme = HTTPBearer()
 app = modal.App("wonder3d-plus", image=image)
+
 
 class GenerationConfig(BaseModel):
     model_config = {
@@ -139,14 +155,15 @@ def views_6to4(imgs):
         outs.append(imgs[i])
     return outs
 
+
 def add_margin(pil_img, color=0, size=256):
     width, height = pil_img.size
     result = Image.new(pil_img.mode, (size, size), color)
     result.paste(pil_img, ((size - width) // 2, (size - height) // 2))
     return result
 
-def process_image(image_input, image_size=2048, crop_size=2048*0.75):
 
+def process_image(image_input, image_size=2048, crop_size=2048 * 0.75):
     if np.asarray(image_input).shape[-1] == 3:
         image_input = remove(image_input)
 
@@ -169,7 +186,9 @@ def process_image(image_input, image_size=2048, crop_size=2048*0.75):
         ref_img_ = ref_img_.resize((w_, h_))
         image_input = add_margin(ref_img_, size=image_size)
     else:
-        image_input = add_margin(image_input, size=max(image_input.height, image_input.width))
+        image_input = add_margin(
+            image_input, size=max(image_input.height, image_input.width)
+        )
         image_input = image_input.resize((image_size, image_size))
 
     return image_input
@@ -179,32 +198,48 @@ def process_image(image_input, image_size=2048, crop_size=2048*0.75):
     gpu="A10G",
     container_idle_timeout=10 * 60,
     timeout=10 * 60,
-    secrets=[modal.Secret.from_name("huggingface-token"),
-             modal.Secret.from_name("blender-api-token")]
+    secrets=[
+        modal.Secret.from_name("huggingface-token"),
+        modal.Secret.from_name("blender-api-token"),
+    ],
 )
 class Model:
     def setup_model(self):
         # Load configs
-        self.config_mv = OmegaConf.load("configs/mvdiffusion-joint.yaml")
-        self.config_controlnet = OmegaConf.load("configs/controlnet.yaml")
+        self.config_mv = OmegaConf.load("./configs/mvdiffusion-joint.yaml")
+        self.config_controlnet = OmegaConf.load("./configs/controlnet.yaml")
 
         # Download models
-        from huggingface_hub import snapshot_download, hf_hub_download # type: ignore
-        snapshot_download(repo_id='flamehaze1115/Wonder3D_plus', local_dir="./ckpts")
-        hf_hub_download(
+        import huggingface_hub  # type: ignore
+
+        huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+        huggingface_hub.snapshot_download(
+            repo_id="flamehaze1115/Wonder3D_plus", local_dir="./ckpts"
+        )
+        huggingface_hub.hf_hub_download(
             repo_id="abhishek/StableSAM",
             filename="sam_vit_h_4b8939.pth",
-            repo_type="model",
-            local_dir="sam_pt"
+            repo_type="space",
+            local_dir="./ckpts/sam_pt",
         )
 
-        # Load pipelines
-        from run_mv_prediction import load_wonder3d_pipeline # type: ignore
-        from run_mv_enhancement import load_controlnet_pipeline # type: ignore
+        # Debug: Print the downloaded files
+        print("Downloaded files:")
+        for root, dirs, files in os.walk("./ckpts"):
+            print(f"\nDirectory: {root}")
+            for file in files:
+                print(f"  - {file}")
 
-        self.device = torch.device('cuda:0')
+
+        # Load pipelines
+        from run_mv_prediction import load_wonder3d_pipeline  # type: ignore
+        from run_mv_enhancement import load_controlnet_pipeline  # type: ignore
+
+        self.device = torch.device("cuda:0")
         self.mv_pipeline = load_wonder3d_pipeline(self.config_mv).to(self.device)
-        self.enhancement_pipeline = load_controlnet_pipeline(self.config_controlnet).to(self.device)
+        self.enhancement_pipeline = load_controlnet_pipeline(self.config_controlnet).to(
+            self.device
+        )
 
     @modal.enter()
     def enter(self):
@@ -213,9 +248,7 @@ class Model:
     @modal.method()
     def inference(self, image, config: GenerationConfig) -> bytes:
         processed_img = process_image(
-            image_input=image,
-            crop_size=config.crop_size*8,
-            image_size=2048
+            image_input=image, crop_size=config.crop_size * 8, image_size=2048
         )
 
         # Run Wonder3D pipeline stages
@@ -225,7 +258,7 @@ class Model:
             seed=config.seed,
             crop_size=config.crop_size,
             camera_type=config.camera_type,
-            cfg=self.config_mv
+            cfg=self.config_mv,
         )
 
         # Run coarse reconstruction
@@ -234,7 +267,7 @@ class Model:
             rgbs=images_pred,
             normals=normals_pred,
             camera_type=config.camera_type,
-            crop_size=config.crop_size
+            crop_size=config.crop_size,
         )
 
         # Run refinement stages
@@ -250,7 +283,7 @@ class Model:
                 crop_size=config.crop_size,
                 camera_type=config.camera_type,
                 cfg=self.config_controlnet,
-                refine_idx=refine_idx
+                refine_idx=refine_idx,
             )
 
             rendered_rgbs, rendered_normal, vertices, faces = iterative_refine(
@@ -262,7 +295,7 @@ class Model:
                 camera_type=config.camera_type,
                 crop_size=config.crop_size,
                 refine_idx=refine_idx,
-                do_sr=(refine_idx==(config.num_refine-1))
+                do_sr=(refine_idx == (config.num_refine - 1)),
             )
 
         # Export final mesh
@@ -289,23 +322,18 @@ class Model:
             img_data = await image.read()
             pil_image = Image.open(io.BytesIO(img_data))
         except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid image: {str(e)}"
-            )
+            raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
 
         try:
             mesh_bytes = self.inference.remote(pil_image, config)
             return Response(
                 content=mesh_bytes,
                 media_type="application/octet-stream",
-                headers={"Content-Disposition": "attachment; filename=model.obj"}
+                headers={"Content-Disposition": "attachment; filename=model.obj"},
             )
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Generation failed: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
 
 @app.local_entrypoint()
 def main(image_path: str):
