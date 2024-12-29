@@ -1,5 +1,6 @@
 import os
 import io
+import tempfile
 import time
 from PIL import Image
 import torch
@@ -42,6 +43,7 @@ image = (
         "libxext6",
         "libxrender-dev",
         "python3-opengl",
+        "ninja-build",
     )
     .pip_install(
         "wheel",
@@ -90,9 +92,15 @@ image = (
         "msgpack==1.1.0",
         "huggingface_hub[hf_transfer]",
     )
-    .run_commands("git clone -b tags/V0.7.8 https://github.com/facebookresearch/pytorch3d.git")
+    .run_commands("git clone https://github.com/facebookresearch/pytorch3d.git")
     .workdir("/pytorch3d")
-    .run_commands("pip install --no-build-isolation .")
+    .run_commands("git checkout V0.7.8")
+    .env({
+        "USE_CUDA": "1",
+        "TORCH_CUDA_ARCH_LIST": "7.0;7.5;8.0;8.6",
+        "FORCE_CUDA": "1",
+    })
+    .run_commands("pip install -e .")
     .workdir("/")
     .run_commands(
         "pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cu121.html"
@@ -175,7 +183,6 @@ def process_image(image_input, image_size=2048, crop_size=2048 * 0.75):
 
     return image_input
 
-
 @app.cls(
     gpu="A10G",
     container_idle_timeout=10 * 60,
@@ -205,14 +212,6 @@ class Model:
             local_dir="./ckpts/sam_pt",
         )
 
-        # Debug: Print the downloaded files
-        print("Downloaded files:")
-        for root, dirs, files in os.walk("./ckpts"):
-            print(f"\nDirectory: {root}")
-            for file in files:
-                print(f"  - {file}")
-
-
         # Load pipelines
         from run_mv_prediction import load_wonder3d_pipeline  # type: ignore
         from run_mv_enhancement import load_controlnet_pipeline  # type: ignore
@@ -229,6 +228,7 @@ class Model:
 
     @modal.method()
     def inference(self, image: Image.Image) -> bytes:
+        temp_output_dir = tempfile.TemporaryDirectory()
         config = GenerationConfig()
         processed_img = process_image(
             image_input=image, crop_size=config.crop_size * 8, image_size=2048
@@ -244,6 +244,7 @@ class Model:
             cfg=self.config_mv,
         )
 
+
         # Run coarse reconstruction
         rendered_rgbs, rendered_normal, vertices, faces = coarse_recon(
             front_image=processed_img,
@@ -255,10 +256,11 @@ class Model:
         )
 
         # Run refinement stages
+        mv_normals, mv_imgs = views_6to4(normals_pred), views_6to4(images_pred)
         for refine_idx in range(config.num_refine):
             normals_pred, images_pred = pred_enhancement_joint(
-                mv_image=images_pred,
-                mv_normlas=normals_pred,
+                mv_image=mv_imgs,
+                mv_normlas=mv_normals,
                 renderd_mv_image=rendered_rgbs,
                 renderd_mv_normal=rendered_normal,
                 front_image=processed_img,
@@ -277,15 +279,19 @@ class Model:
                 rgbs=images_pred,
                 normals=normals_pred,
                 camera_type=config.camera_type,
+                scence_name="scene",
                 crop_size=config.crop_size,
                 refine_idx=refine_idx,
                 do_sr=(refine_idx == (config.num_refine - 1)),
+                output_path=temp_output_dir.name,
             )
+            obj_path = Path(temp_output_dir.name) / f"scene/iterative_refine-{refine_idx}/ortho/3d_model/model.glb"
+            assert obj_path.exists()
 
-        # Export final mesh
-        mesh_bytes = BytesIO()
-        save_obj(vertices, faces, mesh_bytes)
-        return mesh_bytes.getvalue()
+        obj_bytes = obj_path.read_bytes()
+        temp_output_dir.cleanup()
+        return obj_bytes
+
 
     @modal.web_endpoint(method="POST")
     async def web(
@@ -328,4 +334,4 @@ def main(image_path: str):
 
     output_dir = Path("outputs")
     output_dir.mkdir(exist_ok=True)
-    (output_dir / "output.obj").write_bytes(mesh_bytes)
+    (output_dir / "output.glb").write_bytes(mesh_bytes)
