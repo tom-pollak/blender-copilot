@@ -19,4 +19,7 @@ dependencies = [
     "sqlite-minutils>=4.0.3",
     "loguru>=0.7.3",
     "httpx>=0.28.1",
+    "rembg>=2.0.61",
+    "einops>=0.8.0",
+    "torchvision>=0.20.1",
 ]
