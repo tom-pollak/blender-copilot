@@ -44,6 +44,7 @@ image = (
         "libxrender-dev",
         "python3-opengl",
         "ninja-build",
+        "libcudnn8",
     )
     .pip_install(
         "wheel",
@@ -79,7 +80,7 @@ image = (
         "segment_anything",
         "gradio==3.50.2",
         "mosaicml-streaming",
-        "onnxruntime-gpu==1.17.0",
+        "onnxruntime-gpu==1.20.1",
         "pyrender",
         "jaxtyping",
         "pymeshlab",
@@ -91,6 +92,7 @@ image = (
         "fastapi[standard]",
         "msgpack==1.1.0",
         "huggingface_hub[hf_transfer]",
+        "tensorrt",
     )
     .run_commands("git clone https://github.com/facebookresearch/pytorch3d.git")
     .workdir("/pytorch3d")
@@ -227,6 +229,7 @@ class Model:
         self.setup_model()
 
     @modal.method()
+    @torch.no_grad()
     def inference(self, image: Image.Image) -> bytes:
         temp_output_dir = tempfile.TemporaryDirectory()
         config = GenerationConfig()
