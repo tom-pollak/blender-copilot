@@ -296,36 +296,56 @@ class Model:
         return obj_bytes
 
 
-    @modal.web_endpoint(method="POST")
+    @modal.web_endpoint(method="POST", docs=True)
     async def web(
         self,
         request: Request,
         token: Annotated[HTTPAuthorizationCredentials, Depends(auth_scheme)],
-        image: UploadFile,
+        images: list[UploadFile],
         config: GenerationConfig,
     ):
-        if token.credentials != os.environ["HUGGINGFACE_TOKEN"]:
+        """Generate 3D models from uploaded images"""
+        if token.credentials != os.environ["API_TOKEN"]:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        try:
-            img_data = await image.read()
-            pil_image = Image.open(io.BytesIO(img_data))
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
+
+        pil_images = []
+        for img_file in images:
+            try:
+                img_data = await img_file.read()
+                image = Image.open(io.BytesIO(img_data))
+                pil_images.append(image)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid image in upload: {str(e)}"
+                )
+
+        if not pil_images:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid images provided"
+            )
 
         try:
-            mesh_bytes = self.inference.remote(pil_image, config)
-            return Response(
-                content=mesh_bytes,
-                media_type="application/octet-stream",
-                headers={"Content-Disposition": "attachment; filename=model.obj"},
+            mesh_bytes = self.inference.remote(
+                image=pil_images[0],
             )
+            return Response(
+                content=msgpack.packb(mesh_bytes),
+                media_type="application/x-msgpack"
+            )
+
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Generation failed: {str(e)}"
+            )
+
 
 
 @app.local_entrypoint()
