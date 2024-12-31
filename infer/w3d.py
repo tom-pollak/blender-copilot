@@ -1,4 +1,5 @@
 import os
+import msgpack
 import io
 import tempfile
 import time
@@ -229,7 +230,6 @@ class Model:
         self.setup_model()
 
     @modal.method()
-    @torch.no_grad()
     def inference(self, image: Image.Image) -> bytes:
         temp_output_dir = tempfile.TemporaryDirectory()
         config = GenerationConfig()
@@ -332,9 +332,7 @@ class Model:
             )
 
         try:
-            mesh_bytes = self.inference.remote(
-                image=pil_images[0],
-            )
+            mesh_bytes = [self.inference.remote(image=pil_image) for pil_image in pil_images]
             return Response(
                 content=msgpack.packb(mesh_bytes),
                 media_type="application/x-msgpack"

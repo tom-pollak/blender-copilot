@@ -17,6 +17,7 @@ if not MODAL_API_KEY:
 ENDPOINTS = {
     "sf3d": "https://tom-pollak--stable-fast-3d-model-web-dev.modal.run",
     "flux": "https://tom-pollak--flux-model-web-dev.modal.run",
+    "wonder3d": "https://tom-pollak--wonder3d-plus-model-web-dev.modal.run",
 }
 
 app, rt = fast_app(pico=True, debug=True)
@@ -98,8 +99,10 @@ async def image_to_3d(req: Request):
     images = _listreq("images", [await image.read() for image in form.getlist("images")])  # type: ignore
     logger.info(f"Length of images: {len(images)}")
     data = {k: _formitem(form, k) for k in form if k != "images"} # type: ignore
+    model_name = "wonder3d" if data.pop("model_type", "faster") == "better" else "sf3d"
+    logger.info(f"Model name: {model_name}")
     logger.info(f"Data: {data}")
-    return await req_modal_endpoint("sf3d", files=images, data=data)
+    return await req_modal_endpoint(model_name, files=images, data=data)
 
 @rt
 @basic_auth
