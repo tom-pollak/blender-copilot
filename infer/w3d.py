@@ -90,7 +90,8 @@ image = (
         "fire",
         "comet_ml",
         "peft",
-        "fastapi[standard]",
+        "fastapi[standard]==0.115.6",
+        "pydantic==2.10.4",
         "msgpack==1.1.0",
         "huggingface_hub[hf_transfer]",
         "tensorrt",
@@ -98,11 +99,13 @@ image = (
     .run_commands("git clone https://github.com/facebookresearch/pytorch3d.git")
     .workdir("/pytorch3d")
     .run_commands("git checkout V0.7.8")
-    .env({
-        "USE_CUDA": "1",
-        "TORCH_CUDA_ARCH_LIST": "7.0;7.5;8.0;8.6",
-        "FORCE_CUDA": "1",
-    })
+    .env(
+        {
+            "USE_CUDA": "1",
+            "TORCH_CUDA_ARCH_LIST": "7.0;7.5;8.0;8.6",
+            "FORCE_CUDA": "1",
+        }
+    )
     .run_commands("pip install -e .")
     .workdir("/")
     .run_commands(
@@ -185,6 +188,7 @@ def process_image(image_input, image_size=2048, crop_size=2048 * 0.75):
 
     return image_input
 
+
 @app.cls(
     gpu="A10G",
     container_idle_timeout=10 * 60,
@@ -195,12 +199,8 @@ def process_image(image_input, image_size=2048, crop_size=2048 * 0.75):
     ],
 )
 class Model:
-    def setup_model(self):
-        # Load configs
-        self.config_mv = OmegaConf.load("./configs/mvdiffusion-joint.yaml")
-        self.config_controlnet = OmegaConf.load("./configs/controlnet.yaml")
-
-        # Download models
+    @modal.build()
+    def build(self):
         import huggingface_hub  # type: ignore
 
         huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
@@ -214,19 +214,27 @@ class Model:
             local_dir="./ckpts/sam_pt",
         )
 
-        # Load pipelines
+        self.load_pipelines()
+
+    def load_pipelines(self):
         from run_mv_prediction import load_wonder3d_pipeline  # type: ignore
         from run_mv_enhancement import load_controlnet_pipeline  # type: ignore
 
-        self.device = torch.device("cuda:0")
-        self.mv_pipeline = load_wonder3d_pipeline(self.config_mv).to(self.device)
-        self.enhancement_pipeline = load_controlnet_pipeline(self.config_controlnet).to(
-            self.device
-        )
+        device = torch.device("cuda:0")
+        config_mv = OmegaConf.load("./configs/mvdiffusion-joint.yaml")
+        config_controlnet = OmegaConf.load("./configs/controlnet.yaml")
+        mv_pipeline = load_wonder3d_pipeline(config_mv).to(device)
+        enhancement_pipeline = load_controlnet_pipeline(config_controlnet).to(device)
+        return mv_pipeline, enhancement_pipeline, config_mv, config_controlnet
 
     @modal.enter()
     def enter(self):
-        self.setup_model()
+        (
+            self.mv_pipeline,
+            self.enhancement_pipeline,
+            self.config_mv,
+            self.config_controlnet,
+        ) = self.load_pipelines()
 
     @modal.method()
     def inference(self, image: Image.Image, config: GenerationConfig) -> bytes:
@@ -244,7 +252,6 @@ class Model:
             camera_type=config.camera_type,
             cfg=self.config_mv,
         )
-
 
         # Run coarse reconstruction
         rendered_rgbs, rendered_normal, vertices, faces = coarse_recon(
@@ -286,13 +293,15 @@ class Model:
                 do_sr=(refine_idx == (config.num_refine - 1)),
                 output_path=temp_output_dir.name,
             )
-            obj_path = Path(temp_output_dir.name) / f"scene/iterative_refine-{refine_idx}/ortho/3d_model/model.glb"
+            obj_path = (
+                Path(temp_output_dir.name)
+                / f"scene/iterative_refine-{refine_idx}/ortho/3d_model/model.glb"
+            )
             assert obj_path.exists()
 
         obj_bytes = obj_path.read_bytes()
         temp_output_dir.cleanup()
         return obj_bytes
-
 
     @modal.web_endpoint(method="POST", docs=True)
     async def web(
@@ -300,7 +309,7 @@ class Model:
         request: Request,
         token: Annotated[HTTPAuthorizationCredentials, Depends(auth_scheme)],
         images: Annotated[list[UploadFile], File()],
-        config: Annotated[str, Form()] # type: ignore
+        config: Annotated[str, Form()],  # type: ignore
     ):
         """Generate 3D models from uploaded images"""
         if token.credentials != os.environ["API_TOKEN"]:
@@ -313,10 +322,7 @@ class Model:
         try:
             config: GenerationConfig = GenerationConfig.model_validate_json(config)
         except ValidationError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid config: {str(e)}"
-            )
+            raise HTTPException(status_code=400, detail=f"Invalid config: {str(e)}")
 
         pil_images = []
         for img_file in images:
@@ -326,29 +332,23 @@ class Model:
                 pil_images.append(image)
             except Exception as e:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid image in upload: {str(e)}"
+                    status_code=400, detail=f"Invalid image in upload: {str(e)}"
                 )
 
         if not pil_images:
-            raise HTTPException(
-                status_code=400,
-                detail="No valid images provided"
-            )
+            raise HTTPException(status_code=400, detail="No valid images provided")
 
         try:
-            mesh_bytes = [self.inference.remote(image=pil_image, config=config) for pil_image in pil_images]
+            mesh_bytes = [
+                self.inference.remote(image=pil_image, config=config)
+                for pil_image in pil_images
+            ]
             return Response(
-                content=msgpack.packb(mesh_bytes),
-                media_type="application/x-msgpack"
+                content=msgpack.packb(mesh_bytes), media_type="application/x-msgpack"
             )
 
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Generation failed: {str(e)}"
-            )
-
+            raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
 
 
 @app.local_entrypoint()
