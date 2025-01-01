@@ -4,6 +4,7 @@ import io
 import tempfile
 import time
 from PIL import Image
+from pydantic_core import ValidationError
 import torch
 from typing import Literal
 from pathlib import Path
@@ -230,9 +231,8 @@ class Model:
         self.setup_model()
 
     @modal.method()
-    def inference(self, image: Image.Image) -> bytes:
+    def inference(self, image: Image.Image, config: GenerationConfig) -> bytes:
         temp_output_dir = tempfile.TemporaryDirectory()
-        config = GenerationConfig()
         processed_img = process_image(
             image_input=image, crop_size=config.crop_size * 8, image_size=2048
         )
@@ -312,6 +312,13 @@ class Model:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        try:
+            config: GenerationConfig = GenerationConfig.model_validate_json(config)
+        except ValidationError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid config: {str(e)}"
+            )
 
         pil_images = []
         for img_file in images:
@@ -332,7 +339,7 @@ class Model:
             )
 
         try:
-            mesh_bytes = [self.inference.remote(image=pil_image) for pil_image in pil_images]
+            mesh_bytes = [self.inference.remote(image=pil_image, config=config) for pil_image in pil_images]
             return Response(
                 content=msgpack.packb(mesh_bytes),
                 media_type="application/x-msgpack"
@@ -350,7 +357,7 @@ class Model:
 def main(image_path: str):
     t0 = time.time()
     image = Image.open(image_path)
-    mesh_bytes = Model().inference.remote(image)
+    mesh_bytes = Model().inference.remote(image, config=GenerationConfig())
     print(f"🎨 Inference latency: {time.time() - t0:.2f} seconds")
 
     output_dir = Path("outputs")
