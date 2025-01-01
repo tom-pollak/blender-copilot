@@ -4,6 +4,7 @@ import io
 import time
 from typing import Literal
 from pathlib import Path
+from pydantic_core import ValidationError
 from typing_extensions import Annotated
 from PIL import Image
 from io import BytesIO
@@ -157,8 +158,8 @@ class Model:
         self,
         request: Request,
         token: Annotated[HTTPAuthorizationCredentials, Depends(auth_scheme)],
-        images: list[UploadFile],
-        config: GenerationConfig,
+        images: Annotated[list[UploadFile], File()],
+        config: Annotated[str, Form()] # type: ignore
     ):
         """Generate 3D models from uploaded images"""
         if token.credentials != os.environ["API_TOKEN"]:
@@ -185,6 +186,14 @@ class Model:
             raise HTTPException(
                 status_code=400,
                 detail="No valid images provided"
+            )
+
+        try:
+            config: GenerationConfig = GenerationConfig.model_validate_json(config)
+        except ValidationError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid config: {str(e)}"
             )
 
         try:

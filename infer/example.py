@@ -1,4 +1,5 @@
-# # %%
+# %%
+import json
 import os
 import requests
 import io
@@ -85,6 +86,7 @@ else:
 # %%
 
 import requests
+import msgpack
 
 SERVER_URL = "http://localhost:5001"
 ENDPOINTS = {
@@ -94,11 +96,17 @@ ENDPOINTS = {
 REQUEST_TIMEOUT = 5 * 60 # 5 minutes
 
 config = {
-    "model_type": "better",
-    "crop_size": 192,
-    "camera_type": "ortho",
-    "num_refine": 2,
-    "seed": 42
+    "model_type": "mock",
+    # "model_type": "faster",
+    # "crop_size": 192,
+    # "camera_type": "ortho",
+    # "num_refine": 2,
+    # "seed": 42
+    "default_literal": "ortho",
+    "default_int": 2,
+    "default_seed": 42,
+    "default_float": 2.5,
+    "default_list": [1, 2, 3]
 }
 
 response = requests.get(
@@ -107,14 +115,15 @@ response = requests.get(
     files={"images": open(
         "/Users/tom/fun/stable-fast-3d/demo_files/examples/chair1.png", "rb"
     ).read()},
-    data=config,
+    data={"config": json.dumps(config)},
     timeout=REQUEST_TIMEOUT,
 )
 
 if response.status_code == 200:
     glb_files = msgpack.unpackb(response.content)
-    with open("output.glb", "wb") as f:
-        f.write(glb_files[0])
+    print(glb_files)
+    # with open("output.glb", "wb") as f:
+    #     f.write(glb_files[0])
 else:
     print(f"Request failed with status code {response.status_code}")
     print(response.text)

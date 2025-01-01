@@ -301,8 +301,8 @@ class Model:
         self,
         request: Request,
         token: Annotated[HTTPAuthorizationCredentials, Depends(auth_scheme)],
-        images: list[UploadFile],
-        config: GenerationConfig,
+        images: Annotated[list[UploadFile], File()],
+        config: Annotated[str, Form()] # type: ignore
     ):
         """Generate 3D models from uploaded images"""
         if token.credentials != os.environ["API_TOKEN"]:

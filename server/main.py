@@ -1,5 +1,6 @@
 # fmt: off
 import os
+import json
 import msgpack
 import httpx
 from dotenv import load_dotenv
@@ -18,6 +19,13 @@ ENDPOINTS = {
     "sf3d": "https://tom-pollak--stable-fast-3d-model-web-dev.modal.run",
     "flux": "https://tom-pollak--flux-model-web-dev.modal.run",
     "wonder3d": "https://tom-pollak--wonder3d-plus-model-web-dev.modal.run",
+    "mock": "https://tom-pollak--mock-model-web-dev.modal.run",
+}
+
+MESH_NAMES: dict[str, str] = {
+    "faster": "sf3d",
+    "better": "wonder3d",
+    "mock": "mock",
 }
 
 app, rt = fast_app(pico=True, debug=True)
@@ -79,12 +87,6 @@ async def req_modal_endpoint(endpoint: str, timeout: int = REQUEST_TIMEOUT, **po
                         status_code=503,
                         media_type="text/plain")
 
-def _formitem(form, k):
-    "Return single item `k` from `form` if len 1, otherwise return list"
-    if isinstance(form, dict): return form[k]
-    o = form.getlist(k)
-    return o[0] if len(o) == 1 else o if o else None
-
 def _listreq(k: str, lst: list):
     "Multi-request format: list of tuples"
     return [(k, o) for o in lst]
@@ -94,15 +96,29 @@ def _listreq(k: str, lst: list):
 async def image_to_3d(req: Request):
     "Generate 3D model from image"
     form = await parse_form(req)
-    if not form.get("images"):
-        return Response("No images provided", status_code=400, media_type="text/plain")
-    images = _listreq("images", [await image.read() for image in form.getlist("images")])  # type: ignore
-    logger.info(f"Length of images: {len(images)}")
-    data = {k: _formitem(form, k) for k in form if k != "images"} # type: ignore
-    model_name = "wonder3d" if data.pop("model_type", "faster") == "better" else "sf3d"
-    logger.info(f"Model name: {model_name}")
-    logger.info(f"Data: {data}")
-    return await req_modal_endpoint(model_name, files=images, data=data)
+    if set(form.keys()) != {"images", "config"}:
+        return Response("Invalid form", status_code=400, media_type="text/plain")
+
+    try:
+        images = [await image.read() for image in form.getlist("images")] # type: ignore
+        logger.info(f"Number of images: {len(images)}")
+    # image is not readable
+    except AttributeError as e:
+        logger.error(f"Invalid images: {e}")
+        return Response("Invalid images", status_code=400, media_type="text/plain")
+
+    try:
+        config = json.loads(form.get("config")) # type: ignore
+        model_name = MESH_NAMES[config.pop("model_type")]
+    except json.decoder.JSONDecodeError as e: # config is not valid json
+        logger.error(f"Cannot parse JSON config: {e}")
+        return Response("Invalid config", status_code=400, media_type="text/plain")
+    except KeyError as e: # model_type is not in json / model_type is not in MESH_NAMES
+        logger.error(f"Invalid model_type: {e}")
+        return Response("Invalid model_type", status_code=400, media_type="text/plain")
+
+    logger.info(f"Model name: {model_name}\nConfig: {config}")
+    return await req_modal_endpoint(model_name, files=_listreq("images", images), data={'config': json.dumps(config)})
 
 @rt
 @basic_auth
