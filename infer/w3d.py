@@ -4,7 +4,6 @@ import io
 import tempfile
 import time
 from PIL import Image
-from pydantic_core import ValidationError
 import torch
 from typing import Literal
 from pathlib import Path
@@ -23,7 +22,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 cuda_version = "12.1.0"  # no greater than host CUDA version
 flavor = "devel"  # full CUDA toolkit
