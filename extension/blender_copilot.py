@@ -1,6 +1,7 @@
 # type: ignore
 import bpy
 import os
+import json
 import threading
 from datetime import datetime
 import logging
@@ -68,7 +69,7 @@ def generate(job):
 
     try:
         endpoint = "image" if job["use_image"] else "text"
-        data = {
+        config = {
             "remesh_option": job["resampler"],
             "texture_resolution": job["resolution"],
             "batch_size": job["batch_size"],
@@ -92,7 +93,7 @@ def generate(job):
             f"{SERVER_URL}{ENDPOINTS[endpoint]}",
             headers={"Authorization": "Bearer 1234"},
             files=files,
-            data=data,
+            data=dict(config=json.dumps(config)),
             timeout=REQUEST_TIMEOUT,
         )
 
@@ -132,7 +133,7 @@ def generate(job):
 # Utility: Create a new job
 # ------------------------------------------------------------------------
 def create_new_job(
-    text_prompt, use_image, image_path, use_scene_style, resampler, resolution, batch_size
+    model_type, text_prompt, use_image, image_path, use_scene_style, resampler, resolution, batch_size
 ):
     global jobs, job_counter
     logger.info(f"[create_new_job] Creating job {job_counter}")
@@ -144,6 +145,7 @@ def create_new_job(
     job_counter += 1
     new_job = {
         "id": job_counter,
+        "model_type": model_type,
         "text_prompt": text_prompt,
         "use_image": use_image,
         "image_path": image_path if use_image else None,
@@ -234,6 +236,16 @@ class BCOPILOT_Properties(bpy.types.PropertyGroup):
     #     default=False,
     # )
 
+    model_type: bpy.props.EnumProperty(
+        name="Model",
+        description="Choose the model to use for generation",
+        items=[
+            ("faster", "Faster", "Faster model"),
+            ("better", "Better", "Better model"),
+        ],
+        default="better",
+    )
+
     # Resampler dropdown
     resampler: bpy.props.EnumProperty(
         name="Resampler",
@@ -281,6 +293,7 @@ class BCOPILOT_OT_CreateJob(bpy.types.Operator):
                 return {"CANCELLED"}
 
         new_job = create_new_job(
+            model_type=props.model_type,
             text_prompt=props.text_prompt,
             use_image=props.use_image,
             image_path=props.image_path,
@@ -497,6 +510,10 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
         row.label(text="More Options")
 
         if context.scene.bcopilot_show_advanced:
+            row = box.row().split(factor=0.28)
+            row.label(text="Model:")
+            row.prop(props, "model_type", text="")
+
             row = box.row().split(factor=0.28)
             row.label(text="Resampler:")
             row.prop(props, "resampler", text="")
