@@ -23,6 +23,7 @@ from fastapi import (
 )
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError
+from loguru import logger
 
 cuda_version = "12.1.0"  # no greater than host CUDA version
 flavor = "devel"  # full CUDA toolkit
@@ -51,6 +52,7 @@ image = (
         "wheel",
         "torch==2.1.0",
         "torchvision",
+        "loguru",
         "iopath",
         "nvdiffrast @ git+https://github.com/NVlabs/nvdiffrast.git",
         "pillow",
@@ -82,6 +84,7 @@ image = (
         "gradio==3.50.2",
         "mosaicml-streaming",
         "onnxruntime-gpu==1.20.1",
+        "tensorrt==10.5.0",
         "pyrender",
         "jaxtyping",
         "pymeshlab",
@@ -94,7 +97,6 @@ image = (
         "pydantic==2.10.4",
         "msgpack==1.1.0",
         "huggingface_hub[hf_transfer]",
-        "tensorrt",
     )
     .run_commands("git clone https://github.com/facebookresearch/pytorch3d.git")
     .workdir("/pytorch3d")
@@ -112,10 +114,14 @@ image = (
         "pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cu121.html"
     )
     .run_commands("git clone https://github.com/xxlong0/Wonder3D.git /Wonder3D")
+    .pip_install("nvidia-cudnn-cu12==9.6.0.74")
     .env(
         {
             "PYTHONPATH": "/Wonder3D",
             "HF_HUB_ENABLE_HF_TRANSFER": "1",
+            "CUDA_HOME": "/usr/local/cuda",
+            "LD_LIBRARY_PATH": "/usr/local/lib/python3.11/site-packages/tensorrt_libs:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib:${LD_LIBRARY_PATH}",
+
         }
     )
     .workdir("/Wonder3D")
@@ -129,7 +135,8 @@ with image.imports():
     from MVMeshRecon.Coarse_recon import coarse_recon  # type: ignore
     from MVMeshRecon.Iterative_refine import iterative_refine  # type: ignore
     from MVMeshRecon.utils.refine_lr_to_sr import sr_front  # type: ignore
-    from rembg import remove  # type: ignore
+    import rembg
+    from rembg import remove
 
 auth_scheme = HTTPBearer()
 app = modal.App("wonder3d-plus", image=image)
@@ -158,9 +165,9 @@ def add_margin(pil_img, color=0, size=256):
     return result
 
 
-def process_image(image_input, image_size=2048, crop_size=2048 * 0.75):
+def process_image(image_input, rembg_session, image_size=2048, crop_size=2048 * 0.75):
     if np.asarray(image_input).shape[-1] == 3:
-        image_input = remove(image_input)
+        image_input = remove(image_input, session=rembg_session)
 
     if crop_size != -1:
         alpha_np = np.asarray(image_input)[:, :, 3]
@@ -199,6 +206,19 @@ def process_image(image_input, image_size=2048, crop_size=2048 * 0.75):
     ],
 )
 class Model:
+    def load_pipelines(self):
+        from run_mv_prediction import load_wonder3d_pipeline  # type: ignore
+        from run_mv_enhancement import load_controlnet_pipeline  # type: ignore
+
+        device = torch.device("cuda:0")
+        config_mv = OmegaConf.load("./configs/mvdiffusion-joint.yaml")
+        config_controlnet = OmegaConf.load("./configs/controlnet.yaml")
+        mv_pipeline = load_wonder3d_pipeline(config_mv).to(device)
+        enhancement_pipeline = load_controlnet_pipeline(config_controlnet).to(device)
+        rembg_session = rembg.new_session()
+
+        return mv_pipeline, enhancement_pipeline, rembg_session, config_mv, config_controlnet
+
     @modal.build()
     def build(self):
         import huggingface_hub  # type: ignore
@@ -216,33 +236,30 @@ class Model:
 
         self.load_pipelines()
 
-    def load_pipelines(self):
-        from run_mv_prediction import load_wonder3d_pipeline  # type: ignore
-        from run_mv_enhancement import load_controlnet_pipeline  # type: ignore
-
-        device = torch.device("cuda:0")
-        config_mv = OmegaConf.load("./configs/mvdiffusion-joint.yaml")
-        config_controlnet = OmegaConf.load("./configs/controlnet.yaml")
-        mv_pipeline = load_wonder3d_pipeline(config_mv).to(device)
-        enhancement_pipeline = load_controlnet_pipeline(config_controlnet).to(device)
-        return mv_pipeline, enhancement_pipeline, config_mv, config_controlnet
-
     @modal.enter()
     def enter(self):
+        t0 = time.perf_counter()
         (
             self.mv_pipeline,
             self.enhancement_pipeline,
+            self.rembg_session,
             self.config_mv,
             self.config_controlnet,
         ) = self.load_pipelines()
+        t1 = time.perf_counter()
+        logger.debug(f"Loaded pipelines in {t1 - t0:.2f} seconds")
 
     @modal.method()
     def inference(self, image: Image.Image, config: GenerationConfig) -> bytes:
+        t0 = time.perf_counter()
+        logger.debug(f"Processing image with crop size: {config.crop_size}")
+
         temp_output_dir = tempfile.TemporaryDirectory()
         processed_img = process_image(
-            image_input=image, crop_size=config.crop_size * 8, image_size=2048
+            image_input=image, rembg_session=self.rembg_session, crop_size=config.crop_size * 8, image_size=2048
         )
-
+        t1 = time.perf_counter()
+        logger.debug(f"Processed image in {t1 - t0:.2f} seconds")
         # Run Wonder3D pipeline stages
         normals_pred, images_pred = pred_multiview_joint(
             processed_img,
@@ -252,8 +269,9 @@ class Model:
             camera_type=config.camera_type,
             cfg=self.config_mv,
         )
+        t2 = time.perf_counter()
+        logger.debug(f"Done pred_multiview_joint in {t2 - t1:.2f} seconds")
 
-        # Run coarse reconstruction
         rendered_rgbs, rendered_normal, vertices, faces = coarse_recon(
             front_image=processed_img,
             rgbs=images_pred,
@@ -262,8 +280,11 @@ class Model:
             scence_name="scene",
             crop_size=config.crop_size,
         )
+        t3 = time.perf_counter()
+        logger.debug(f"Done coarse_recon in {t3 - t2:.2f} seconds")
 
         # Run refinement stages
+        logger.debug("Starting refinement stages")
         mv_normals, mv_imgs = views_6to4(normals_pred), views_6to4(images_pred)
         for refine_idx in range(config.num_refine):
             normals_pred, images_pred = pred_enhancement_joint(
@@ -279,7 +300,8 @@ class Model:
                 cfg=self.config_controlnet,
                 refine_idx=refine_idx,
             )
-
+            t4 = time.perf_counter()
+            logger.debug(f"Done pred_enhancement_joint {refine_idx} in {t4 - t3:.2f} seconds")
             rendered_rgbs, rendered_normal, vertices, faces = iterative_refine(
                 vertex_init=vertices,
                 face_init=faces,
@@ -293,6 +315,8 @@ class Model:
                 do_sr=(refine_idx == (config.num_refine - 1)),
                 output_path=temp_output_dir.name,
             )
+            t5 = time.perf_counter()
+            logger.debug(f"Done iterative_refine {refine_idx} in {t5 - t4:.2f} seconds")
             obj_path = (
                 Path(temp_output_dir.name)
                 / f"scene/iterative_refine-{refine_idx}/ortho/3d_model/model.glb"
@@ -319,6 +343,8 @@ class Model:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        start_time = time.perf_counter()
+
         try:
             config: GenerationConfig = GenerationConfig.model_validate_json(config)
         except ValidationError as e:
@@ -338,17 +364,16 @@ class Model:
         if not pil_images:
             raise HTTPException(status_code=400, detail="No valid images provided")
 
-        try:
-            mesh_bytes = [
-                self.inference.remote(image=pil_image, config=config)
-                for pil_image in pil_images
-            ]
-            return Response(
-                content=msgpack.packb(mesh_bytes), media_type="application/x-msgpack"
-            )
+        mesh_bytes = [
+            self.inference.remote(image=pil_image, config=config)
+            for pil_image in pil_images
+        ]
 
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+        logger.info(f"Inference latency: {time.perf_counter() - start_time:.2f} seconds")
+        return Response(
+            content=msgpack.packb(mesh_bytes), media_type="application/x-msgpack"
+        )
+
 
 
 @app.local_entrypoint()
