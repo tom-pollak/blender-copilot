@@ -14,7 +14,7 @@ import numpy as np
 import modal
 from fastapi import (
     Response,
-    Body,
+    Form,
     Depends,
     HTTPException,
     status,
@@ -23,7 +23,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 cuda_version = "12.1.0"  # no greater than host CUDA version
 flavor = "devel"  # full CUDA toolkit
@@ -128,7 +128,6 @@ with image.imports():
     from MVMeshRecon.Iterative_refine import iterative_refine  # type: ignore
     from MVMeshRecon.utils.refine_lr_to_sr import sr_front  # type: ignore
     from rembg import remove  # type: ignore
-    from remeshing.util.func import save_obj  # type: ignore
 
 auth_scheme = HTTPBearer()
 app = modal.App("wonder3d-plus", image=image)

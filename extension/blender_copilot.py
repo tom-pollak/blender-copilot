@@ -70,6 +70,7 @@ def generate(job):
     try:
         endpoint = "image" if job["use_image"] else "text"
         config = {
+            "model_type": job["model_type"],
             "remesh_option": job["resampler"],
             "texture_resolution": job["resolution"],
             "batch_size": job["batch_size"],

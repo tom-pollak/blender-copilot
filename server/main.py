@@ -114,7 +114,7 @@ async def image_to_3d(req: Request):
         logger.error(f"Cannot parse JSON config: {e}")
         return Response("Invalid config", status_code=400, media_type="text/plain")
     except KeyError as e: # model_type is not in json / model_type is not in MESH_NAMES
-        logger.error(f"Invalid model_type: {e}")
+        logger.error(f"Invalid model_type: {config.get('model_type', 'None')}")
         return Response("Invalid model_type", status_code=400, media_type="text/plain")
 
     logger.info(f"Model name: {model_name}\nConfig: {config}")
