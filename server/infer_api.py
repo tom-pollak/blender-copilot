@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 from loguru import logger
 from PIL import Image
 from fasthtml.common import *
-from functools import wraps
+
+from server.oauth_auth import user_authenticated
 
 load_dotenv()
 
@@ -40,20 +41,6 @@ Style: Show 3D shape of the object. Modern animated movie: {}
 REQUEST_TIMEOUT = 3 * 60 # 3 minutes
 
 _job_id = 0
-
-def basic_auth(f):
-    "Super basic auth for testing purposes"
-    @wraps(f)
-    async def wrapper(request: Request, *args, **kwargs):
-        token = request.headers.get("Authorization")
-        if token != "Bearer 1234":
-            return Response("Not Authorized",
-                            status_code=401,
-                            headers={"WWW-Authenticate": "Bearer"})
-        return await f(request, *args, **kwargs)
-
-    return wrapper
-
 
 async def req_modal_endpoint(endpoint: str, timeout: int = REQUEST_TIMEOUT, **post_args) -> Response:
     try:
@@ -92,9 +79,12 @@ def _listreq(k: str, lst: list):
     return [(k, o) for o in lst]
 
 @rt
-@basic_auth
+@user_authenticated
 async def image_to_3d(req: Request):
     "Generate 3D model from image"
+    user = req.session['user']
+    logger.info(f"Request from user: {user['email']}")
+
     form = await parse_form(req)
     if set(form.keys()) != {"images", "config"}:
         return Response("Invalid form", status_code=400, media_type="text/plain")
@@ -102,7 +92,6 @@ async def image_to_3d(req: Request):
     try:
         images = [await image.read() for image in form.getlist("images")] # type: ignore
         logger.info(f"Number of images: {len(images)}")
-    # image is not readable
     except AttributeError as e:
         logger.error(f"Invalid images: {e}")
         return Response("Invalid images", status_code=400, media_type="text/plain")
@@ -110,10 +99,10 @@ async def image_to_3d(req: Request):
     try:
         config = json.loads(form.get("config")) # type: ignore
         model_name = MESH_NAMES[config.pop("model_type")]
-    except json.decoder.JSONDecodeError as e: # config is not valid json
+    except json.decoder.JSONDecodeError as e:
         logger.error(f"Cannot parse JSON config: {e}")
         return Response("Invalid config", status_code=400, media_type="text/plain")
-    except KeyError as e: # model_type is not in json / model_type is not in MESH_NAMES
+    except KeyError as e:
         logger.error(f"Invalid model_type: {config.get('model_type', 'None')}")
         return Response("Invalid model_type", status_code=400, media_type="text/plain")
 
@@ -121,9 +110,12 @@ async def image_to_3d(req: Request):
     return await req_modal_endpoint(model_name, files=_listreq("images", images), data={'config': json.dumps(config)})
 
 @rt
-@basic_auth
+@user_authenticated
 async def text_to_3d(req: Request):
     "Generate 3D model from text"
+    user = req.session['user']
+    logger.info(f"Request from user: {user['email']}")
+
     form = await parse_form(req)
     data = form2dict(form)
     prompt = data.get("prompt")
