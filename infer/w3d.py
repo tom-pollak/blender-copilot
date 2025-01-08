@@ -8,7 +8,6 @@ import torch
 from typing import Literal
 from pathlib import Path
 from typing_extensions import Annotated
-from io import BytesIO
 import numpy as np
 import modal
 from fastapi import (
@@ -174,7 +173,7 @@ def process_image(image_input, rembg_session, image_size=2048, crop_size=2048 * 
         coords = np.stack(np.nonzero(alpha_np), 1)[:, (1, 0)]
         min_x, min_y = np.min(coords, 0)
         max_x, max_y = np.max(coords, 0)
-        ref_img_ = image_input.crop((min_x, min_y, max_x, max_y))
+        ref_img_ = image_input.crop((min_x, min_y, max_x, max_y)) # type: ignore
 
         width, height = ref_img_.size
 
@@ -189,7 +188,7 @@ def process_image(image_input, rembg_session, image_size=2048, crop_size=2048 * 
         image_input = add_margin(ref_img_, size=image_size)
     else:
         image_input = add_margin(
-            image_input, size=max(image_input.height, image_input.width)
+            image_input, size=max(image_input.height, image_input.width) # type: ignore
         )
         image_input = image_input.resize((image_size, image_size))
 

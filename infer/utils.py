@@ -16,7 +16,7 @@ def remove_background(
         do_remove = False
     do_remove = do_remove or force
     if do_remove:
-        image = rembg.remove(image, session=rembg_session, **rembg_kwargs)
+        image = rembg.remove(image, session=rembg_session, **rembg_kwargs) # type: ignore
     return image
 
 

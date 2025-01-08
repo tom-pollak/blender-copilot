@@ -9,7 +9,7 @@ from PIL import Image
 from fasthtml.common import *
 
 from server.auth import user_authenticated
-from server.users import get_user, increment_api_calls
+from server.users import rate_limited
 
 load_dotenv()
 
@@ -81,13 +81,11 @@ def _listreq(k: str, lst: list):
 
 @rt
 @user_authenticated
+@rate_limited
 async def image_to_3d(req: Request):
     "Generate 3D model from image"
     user = req.scope['user']
     logger.info(f"Request from user: {user.email}")
-
-    # Track API usage
-    increment_api_calls(user.id)
 
     form = await parse_form(req)
     if set(form.keys()) != {"images", "config"}:
@@ -115,6 +113,7 @@ async def image_to_3d(req: Request):
 
 @rt
 @user_authenticated
+@rate_limited
 async def text_to_3d(req: Request):
     "Generate 3D model from text"
     user = req.scope['user']
