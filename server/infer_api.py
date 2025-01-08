@@ -7,9 +7,8 @@ from loguru import logger
 from PIL import Image
 from fasthtml.common import *
 
-from server.auth import user_authenticated
-from server.users import rate_limited
-from server.app import rt
+from .users import rate_limited
+from .app import rt
 
 __all__ = ["text_to_3d", "image_to_3d"]
 
@@ -78,7 +77,6 @@ def _listreq(k: str, lst: list):
     return [(k, o) for o in lst]
 
 @rt
-@user_authenticated
 @rate_limited
 async def image_to_3d(req: Request):
     "Generate 3D model from image"
@@ -110,7 +108,6 @@ async def image_to_3d(req: Request):
     return await req_modal_endpoint(model_name, files=_listreq("images", images), data={'config': json.dumps(config)})
 
 @rt
-@user_authenticated
 @rate_limited
 async def text_to_3d(req: Request):
     "Generate 3D model from text"

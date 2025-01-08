@@ -9,7 +9,7 @@ from fasthtml.common import RedirectResponse, Request, Response
 
 from .users import create_or_update_user, get_user
 
-__all__ = ["init_auth", "user_authenticated", "verify_csrf_token"]
+__all__ = ["init_auth", "verify_csrf_token"]
 
 def basic_auth(f):
     """Super basic auth for testing purposes"""
@@ -64,59 +64,36 @@ class Auth(OAuth):
             return RedirectResponse(return_url, status_code=303)
         return False
 
+    def check_invalid(self, req, session, auth):
+        """Verify the current session is valid"""
+        access_token = session.get("access_token")
+        token_expiry = session.get("token_expiry")
 
-def user_authenticated(f):
-    """Decorator to require user authentication for a route"""
-    def _redirect_to_login(request):
-        """Helper function to generate login redirect with state"""
-        csrf_token = secrets.token_urlsafe()
-        request.session["csrf_token"] = csrf_token
+        if not access_token or not token_expiry:
+            return self.redir_login(session)
 
-        state = {"return_to": str(request.url), "csrf_token": csrf_token}
-        logger.debug(f"Redirecting to login with state: {state}")
-        return RedirectResponse(f"/login?state={state}", status_code=303)
-
-    @wraps(f)
-    async def wrapper(request, *args, **kwargs):
-        # Get auth info from session
-        user_id = request.session.get("user_id")
-        access_token = request.session.get("access_token")
-        token_expiry = request.session.get("token_expiry")
-
-        if not user_id or not access_token:
-            return _redirect_to_login(request)
-
-        # Check local -- Google client also checks expiry
-        if not token_expiry or time() > token_expiry:
+        # Check if token is expired locally
+        if time() > token_expiry:
             logger.debug("Token expired locally")
-            request.session.clear()
-            return _redirect_to_login(request)
+            session.clear()
+            return self.redir_login(session)
 
-        # Verify token with Google
         try:
-            user_info = await client.get_info(access_token)  # type: ignore
-            if user_info.get("sub") != user_id:
-                # Token belongs to different user - possible session forgery
-                logger.warning(
-                    f"Token user mismatch: {user_info.get('sub')} != {user_id}"
-                )
-                request.session.clear()
-                return _redirect_to_login(request)
+            # Verify token with Google
+            user_info = self.cli.get_info(access_token)
+            if not user_info or not user_info.get("sub"):
+                logger.warning("Invalid token response from Google")
+                session.clear()
+                return self.redir_login(session)
 
-            # Valid -- add user to request
-            logger.debug(f"User authenticated: {user_id}")
-            user = get_user(user_id)
-            request.scope["user"] = user
+            # Add user to request scope
+            req.scope["user"] = get_user(user_info["sub"])
+            return False  # Valid token
 
         except Exception as e:
-            # Token invalid/expired or user not found
-            logger.error(f"Auth error: {str(e)}")
-            request.session.clear()
-            return _redirect_to_login(request)
-
-        return await f(request, *args, **kwargs)
-
-    return wrapper
+            logger.error(f"Token verification failed: {str(e)}")
+            session.clear()
+            return self.redir_login(session)
 
 
 def verify_csrf_token(request):
@@ -133,8 +110,14 @@ def verify_csrf_token(request):
 
 def init_auth(app):
     """Initialize authentication for the app"""
-    # Create OAuth handler
-    oauth = Auth(app, client)
+    # Create OAuth handler with skip paths
+    oauth = Auth(app, client, skip=[
+        r'/favicon\.ico',
+        r'/static/.*',
+        r'.*\.css',
+        '/login',
+        '/home'  # Skip auth check for home route
+    ])
 
     @app.get("/login")
     def login(request):

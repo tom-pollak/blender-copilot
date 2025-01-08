@@ -1,13 +1,12 @@
 from fasthtml.common import *
-from server.app import rt
-from server.auth import user_authenticated
+
+from .app import rt
 
 __all__ = ["home", "profile"]
 
 @rt
 async def home(request):
     hdrs = (
-        Script(src="https://cdn.tailwindcss.com"),
         Style("""
             body {
                 background: #080808;
@@ -89,7 +88,6 @@ async def home(request):
     )
 
 @rt
-@user_authenticated
 async def profile(request):
     user = request.session['user']
     return f"Welcome {user['name']}!"

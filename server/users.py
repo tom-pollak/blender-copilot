@@ -1,9 +1,7 @@
 from typing import Any
-from fasthtml.common import database
-from datetime import datetime, date
-from fasthtml.common import Response
 from functools import wraps
-from fastapi import Request
+from datetime import datetime, date
+from fasthtml.common import database, Response, Request
 from loguru import logger
 
 __all__ = ["create_or_update_user", "get_user", "rate_limited"]
