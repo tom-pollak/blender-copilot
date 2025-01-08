@@ -3,15 +3,15 @@ import os
 import json
 import msgpack
 import httpx
-from dotenv import load_dotenv
 from loguru import logger
 from PIL import Image
 from fasthtml.common import *
 
 from server.auth import user_authenticated
 from server.users import rate_limited
+from server.app import rt
 
-load_dotenv()
+__all__ = ["text_to_3d", "image_to_3d"]
 
 MODAL_API_KEY = os.getenv("MODAL_API_KEY")
 if not MODAL_API_KEY:
@@ -29,8 +29,6 @@ MESH_NAMES: dict[str, str] = {
     "better": "wonder3d",
     "mock": "mock",
 }
-
-app, rt = fast_app(pico=True, debug=True)
 
 TEXT_PROMPT = """\
 Front-facing 3D Blender render. Well-lit, smooth texture, soft shadows. Clean white background
@@ -142,6 +140,3 @@ async def text_to_3d(req: Request):
 
     logger.info(f"Length of images: {len(images)}")
     return await req_modal_endpoint("sf3d", files=_listreq("images", images), data=data)
-
-
-serve()

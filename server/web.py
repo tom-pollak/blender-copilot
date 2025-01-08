@@ -1,0 +1,95 @@
+from fasthtml.common import *
+from server.app import rt
+from server.auth import user_authenticated
+
+__all__ = ["home", "profile"]
+
+@rt
+async def home(request):
+    hdrs = (
+        Script(src="https://cdn.tailwindcss.com"),
+        Style("""
+            body {
+                background: #080808;
+            }
+            .main-video {
+                width: 100%;
+                height: 100vh;
+                object-fit: cover;
+            }
+            .nav-backdrop {
+                background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+                height: 120px;
+                pointer-events: none;
+            }
+            .nav-content {
+                pointer-events: auto;
+            }
+        """)
+    )
+
+    header = Header(
+        Div(
+            Div(
+                cls="nav-backdrop absolute w-full"
+            ),
+            Div(
+                Div("Blender Copilot", cls="text-lg font-medium"),
+                Button("Login", cls="text-sm px-4 py-2 bg-white/10 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-colors"),
+                cls="nav-content flex justify-between items-center py-6 px-12 relative"
+            ),
+            cls="fixed w-full z-50"
+        )
+    )
+
+    video_section = Div(
+        Video(
+            Source(src="/static/roof_trashcan.mp4", type="video/mp4"),
+            autoplay=True,
+            muted=True,
+            loop=True,
+            playsinline=True,
+            cls="main-video"
+        ),
+        Div(
+            Div(
+                H1("Transform text and images into 3D instantly", cls="font-medium mb-4 leading-tight", style="font-size: min(8vw, 3rem)"),
+                Button("TRY IT FOR FREE", cls="text-sm sm:text-base whitespace-nowrap px-6 py-3 bg-white text-black rounded-lg font-medium hover:bg-opacity-90 transition-colors"),
+                cls="max-w-3xl"
+            ),
+            cls="absolute bottom-0 left-0 p-12 w-full bg-gradient-to-t from-black to-transparent"
+        ),
+        cls="relative"
+    )
+
+    showcase = Div(
+        Div(
+            Div(
+                P("See what's possible with Blender Copilot", cls="text-lg text-gray-400 max-w-md"),
+                cls="mb-16"
+            ),
+            Img(src="/static/mesh-samples.gif", alt="3D Mesh Samples", cls="w-full rounded-xl"),
+            cls="max-w-7xl mx-auto"
+        ),
+        cls="px-12 py-24"
+    )
+
+    # Main Content
+    main_content = Main(
+        video_section,
+        showcase
+    )
+
+    return Titled(
+        "Blender Copilot Home",
+        Header(header),
+        main_content,
+        hdrs=hdrs,
+        cls="text-white"
+    )
+
+@rt
+@user_authenticated
+async def profile(request):
+    user = request.session['user']
+    return f"Welcome {user['name']}!"

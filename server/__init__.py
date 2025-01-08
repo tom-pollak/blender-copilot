@@ -1,19 +1,3 @@
-from fasthtml.common import *
-from .oauth_auth import init_auth, user_authenticated
-
-app = fast_app()
-oauth = init_auth(app)
-
-@app.get('/')
-@user_authenticated
-async def home(request):
-    user = request.session['user']
-    return f"Welcome {user['name']}!"
-
-# Protected route example
-@app.get('/protected')
-@user_authenticated
-async def protected(request):
-    return "This is a protected route"
-
-serve()
+from .infer_api import text_to_3d, image_to_3d
+from .web import home, profile
+from .users import create_or_update_user, get_user, rate_limited

@@ -5,6 +5,9 @@ from fasthtml.common import Response
 from functools import wraps
 from fastapi import Request
 from loguru import logger
+
+__all__ = ["create_or_update_user", "get_user", "rate_limited"]
+
 # Add plan limits
 PLAN_LIMITS = {
     'free': 20,      # Unauthenticated or free tier
