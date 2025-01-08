@@ -8,7 +8,8 @@ from loguru import logger
 from PIL import Image
 from fasthtml.common import *
 
-from server.oauth_auth import user_authenticated
+from server.auth import user_authenticated
+from server.users import get_user, increment_api_calls
 
 load_dotenv()
 
@@ -82,8 +83,11 @@ def _listreq(k: str, lst: list):
 @user_authenticated
 async def image_to_3d(req: Request):
     "Generate 3D model from image"
-    user = req.session['user']
-    logger.info(f"Request from user: {user['email']}")
+    user = req.scope['user']
+    logger.info(f"Request from user: {user.email}")
+
+    # Track API usage
+    increment_api_calls(user.id)
 
     form = await parse_form(req)
     if set(form.keys()) != {"images", "config"}:
@@ -113,8 +117,8 @@ async def image_to_3d(req: Request):
 @user_authenticated
 async def text_to_3d(req: Request):
     "Generate 3D model from text"
-    user = req.session['user']
-    logger.info(f"Request from user: {user['email']}")
+    user = req.scope['user']
+    logger.info(f"Request from user: {user.email}")
 
     form = await parse_form(req)
     data = form2dict(form)
