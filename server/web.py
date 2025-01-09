@@ -97,4 +97,41 @@ async def profile(request):
     user_id = request.session["user_id"]
     user = get_user(user_id)
     assert user is not None, "User not found in authenticated session"
-    return P(f"Welcome {user.name}!"), A('Log out', href='/logout')
+
+    # Add copy-to-clipboard functionality
+    copy_script = Script("""
+    function copyToken() {
+        const token = document.getElementById('api-token');
+        navigator.clipboard.writeText(token.textContent);
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 1000);
+    }
+    """)
+
+    return Main(
+        copy_script,
+        Div(
+            H1(f"Welcome, {user.name}!", cls="text-3xl font-bold mb-8"),
+            Div(
+                H2("Your License Key", cls="text-xl font-medium mb-4"),
+                Div(
+                    Div(
+                        P(user.api_token, id="api-token",
+                          cls="font-mono bg-gray-800 p-4 rounded-lg break-all"),
+                        Button("Copy", id="copy-btn",
+                               onclick="copyToken()",
+                               cls="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"),
+                        cls="space-y-2"
+                    ),
+                    cls="max-w-2xl"
+                ),
+                cls="mt-8"
+            ),
+            A("Log out",
+              href="/logout",
+              cls="mt-8 inline-block px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"),
+            cls="p-8"
+        ),
+        cls="text-white bg-gray-900 min-h-screen"
+    )
