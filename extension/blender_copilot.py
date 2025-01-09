@@ -12,8 +12,8 @@ import logging
 
 SERVER_URL = "http://localhost:5001"
 ENDPOINTS = {
-    "image": "/image_to_3d",
-    "text": "/text_to_3d",
+    "image": "/infer/image_to_3d",
+    "text": "/infer/text_to_3d",
 }
 REQUEST_TIMEOUT = 5 * 60 # 5 minutes
 
@@ -90,9 +90,10 @@ def generate(job):
             files = None
 
         logger.info(f"[generate] Requesting {job['text_prompt']}")
+        token = "XGEkPCb26H6-tj-Ts3kVqQSkfRooD9NJCmtkraz3Iyc"
         response = requests.get(
             f"{SERVER_URL}{ENDPOINTS[endpoint]}",
-            headers={"Authorization": "Bearer 1234"},
+            headers={"Authorization": f"Bearer {token}"},
             files=files,
             data=dict(config=json.dumps(config)),
             timeout=REQUEST_TIMEOUT,

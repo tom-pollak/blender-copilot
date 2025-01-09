@@ -7,8 +7,8 @@ from loguru import logger
 from PIL import Image
 from fasthtml.common import *
 
-from .users import rate_limited
 from .app import rt
+from .api_utils import rate_limited
 
 __all__ = ["text_to_3d", "image_to_3d"]
 
@@ -76,14 +76,13 @@ def _listreq(k: str, lst: list):
     "Multi-request format: list of tuples"
     return [(k, o) for o in lst]
 
-@rt
+@rt("/infer/image_to_3d")
 @rate_limited
 async def image_to_3d(req: Request):
     "Generate 3D model from image"
-    user = req.scope['user']
-    logger.info(f"Request from user: {user.email}")
-
     form = await parse_form(req)
+    logger.debug(f"Form: {form}")
+    logger.debug(f"Form keys: {set(form.keys())}")
     if set(form.keys()) != {"images", "config"}:
         return Response("Invalid form", status_code=400, media_type="text/plain")
 
@@ -107,15 +106,16 @@ async def image_to_3d(req: Request):
     logger.info(f"Model name: {model_name}\nConfig: {config}")
     return await req_modal_endpoint(model_name, files=_listreq("images", images), data={'config': json.dumps(config)})
 
-@rt
+@rt("/infer/text_to_3d")
 @rate_limited
 async def text_to_3d(req: Request):
     "Generate 3D model from text"
-    user = req.scope['user']
-    logger.info(f"Request from user: {user.email}")
-
     form = await parse_form(req)
-    data = form2dict(form)
+    logger.debug(f"Form: {form}")
+    data: dict = json.loads(form.get("config")) # type: ignore
+    if not data:
+        return Response("No config provided", status_code=400, media_type="text/plain")
+
     prompt = data.get("prompt")
     if not prompt:
         return Response("No prompt provided", status_code=400, media_type="text/plain")

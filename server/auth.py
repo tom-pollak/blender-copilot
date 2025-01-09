@@ -6,27 +6,9 @@ from loguru import logger
 from fasthtml.oauth import OAuth, GoogleAppClient, url_match
 from fasthtml.common import *
 
-from .users import create_or_update_user, get_user
+from .users import create_or_update_user, get_user_by_api_token, get_user
 
 __all__ = ["init_auth", "verify_csrf_token"]
-
-
-def basic_auth(f):
-    """Super basic auth for testing purposes"""
-    password = "1234"
-
-    @wraps(f)
-    async def wrapper(request: Request, *args, **kwargs):
-        token = request.headers.get("Authorization")
-        if token != f"Bearer {password}":
-            return Response(
-                "Not Authorized",
-                status_code=401,
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return await f(request, *args, **kwargs)
-
-    return wrapper
 
 
 # Create OAuth client
@@ -87,6 +69,7 @@ def init_auth(app):
             "/",
             "/redirect",
             "/whoami",
+            r"/infer/.*"
         ],
     )
 
@@ -118,8 +101,8 @@ def init_auth(app):
         logger.debug("=== Whoami called ===")
         logger.debug(f"Session: {request.session}")
         user_id = request.session.get('user_id')
-        print(user_id)
-        user_data = asdict(get_user(user_id)) if user_id else None
+        user = get_user(user_id)
+        user_data = asdict(user) if user else None
         return JSONResponse(
             {
                 "session": dict(request.session),
