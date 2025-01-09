@@ -1,12 +1,11 @@
 import os
 import secrets
-from functools import wraps
 
 from loguru import logger
 from fasthtml.oauth import OAuth, GoogleAppClient, url_match
 from fasthtml.common import *
 
-from .users import create_or_update_user, get_user_by_api_token, get_user
+from .users import create_or_update_user, get_user
 
 __all__ = ["init_auth", "verify_csrf_token"]
 

@@ -1,6 +1,7 @@
 import os
-from fasthtml.common import *
 from dotenv import load_dotenv
+
+from fasthtml.common import *
 
 from .auth import init_auth
 

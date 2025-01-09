@@ -95,5 +95,6 @@ async def home(request):
 @rt
 async def profile(request):
     user_id = request.session["user_id"]
-    user: User = get_user(user_id)
+    user = get_user(user_id)
+    assert user is not None, "User not found in authenticated session"
     return P(f"Welcome {user.name}!"), A('Log out', href='/logout')
