@@ -1,8 +1,11 @@
+import os
+import secrets
 from typing import Any
 from functools import wraps
 from datetime import datetime, date
 from fasthtml.common import database, Response, Request
 from loguru import logger
+from pathlib import Path
 
 __all__ = ["create_or_update_user", "get_user", "rate_limited"]
 
@@ -14,7 +17,7 @@ PLAN_LIMITS = {
 }
 
 # Initialize database
-db = database('data/main.db')
+db = database(Path(__file__).parent / "data" / "main.db")
 users = db.t.users
 
 # Add plan field to users table
@@ -28,8 +31,8 @@ if users not in db.t:
         api_calls=int,   # Total API calls
         daily_calls=int, # Calls made today
         last_call_date=str,  # Date of last API call
-        refresh_token=str,
         plan=str,        # User's plan type
+        api_token=str,   # API token
     ), pk='id')
 
 # Add IP tracking table
@@ -44,13 +47,15 @@ if ip_usage not in db.t:
 User = users.dataclass()
 IPUsage = ip_usage.dataclass()
 
-def create_or_update_user(ident: str, email: str, name: str, refresh_token: str) -> User:
+def generate_api_token():
+    return secrets.token_urlsafe(32)
+
+def create_or_update_user(ident: str, email: str, name: str) -> User:
     """Create a new user or update existing user's info"""
     now = datetime.now().isoformat()
     today = date.today().isoformat()
 
     user_data = {
-        "refresh_token": refresh_token,
         "last_login": now,
     }
 
@@ -68,6 +73,7 @@ def create_or_update_user(ident: str, email: str, name: str, refresh_token: str)
             "api_calls": 0,
             "daily_calls": 0,
             "plan": 'free',  # Default to free plan
+            "api_token": generate_api_token(),
             **user_data,
         })
 
@@ -76,6 +82,10 @@ def create_or_update_user(ident: str, email: str, name: str, refresh_token: str)
 def get_user(user_id: str) -> User:
     """Get user by ID"""
     return users[user_id]
+
+def get_user_by_api_token(api_token: str) -> User:
+    """Get user by API token"""
+    return users.selectone(api_token=api_token)
 
 def increment_api_calls(data: User | IPUsage, limit: int) -> bool:
     """Increment API calls and update last call date"""
@@ -103,15 +113,17 @@ def rate_limited(f):
     """Decorator to check rate limit and increment API calls if allowed"""
     @wraps(f)
     async def wrapper(req: Request, *args: Any, **kwargs: Any):
-        user = req.scope.get('user')
-
-        # Authenticated users
         err_resp = Response(
             "Daily API limit exceeded. Try again tomorrow or upgrade your plan.",
             status_code=429
         )
+        user_id = req.session.get('user_id')
+        logger.debug(f"User ID: {user_id}")
+
+        # I don't really want user id, I want to include a api token in the request that I can use to get the user
         # Authenticated users
-        if user:
+        if user_id:
+            user = get_user(user_id)
             if not increment_api_calls(user, PLAN_LIMITS[user.plan]):
                 return err_resp
         # Anonymous users -- no IP

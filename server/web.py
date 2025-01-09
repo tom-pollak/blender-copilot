@@ -2,6 +2,7 @@
 from fasthtml.common import *
 
 from .app import rt, oauth
+from .users import User, get_user
 
 __all__ = ["home", "profile"]
 
@@ -93,5 +94,6 @@ async def home(request):
 
 @rt
 async def profile(request):
-    user = request.session["user"]
-    return P(f"Welcome {user['name']}!"), A('Log out', href='/logout')
+    user_id = request.session["user_id"]
+    user: User = get_user(user_id)
+    return P(f"Welcome {user.name}!"), A('Log out', href='/logout')
