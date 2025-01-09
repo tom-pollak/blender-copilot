@@ -15,9 +15,14 @@ hdrs = (
     Script(src="https://cdn.tailwindcss.com/3.4.16"),
 )
 
-static_path = os.path.join(os.path.dirname(__file__), "static")
+static_path = os.path.dirname(os.path.abspath(__file__)) # then /static
 
-app, rt = fast_app(debug=True, hdrs=hdrs, default_hdrs=False, static_path=static_path)
+app, rt = fast_app(
+    debug=True,
+    hdrs=hdrs, # tailwind
+    default_hdrs=True, # htmx
+    static_path=static_path,
+)
 auth = init_auth(app)
 
 serve()

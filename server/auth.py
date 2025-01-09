@@ -80,7 +80,7 @@ class Auth(OAuth):
 
         try:
             # Verify token with Google
-            user_info = self.cli.get_info(access_token)
+            user_info = self.cli.get_info(access_token) # type: ignore
             if not user_info or not user_info.get("sub"):
                 logger.warning("Invalid token response from Google")
                 session.clear()
@@ -116,7 +116,8 @@ def init_auth(app):
         r'/static/.*',
         r'.*\.css',
         '/login',
-        '/home'  # Skip auth check for home route
+        '/',
+        r'.*\.mp4',
     ])
 
     @app.get("/login")

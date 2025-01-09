@@ -100,7 +100,7 @@ async def image_to_3d(req: Request):
     except json.decoder.JSONDecodeError as e:
         logger.error(f"Cannot parse JSON config: {e}")
         return Response("Invalid config", status_code=400, media_type="text/plain")
-    except KeyError as e:
+    except KeyError:
         logger.error(f"Invalid model_type: {config.get('model_type', 'None')}")
         return Response("Invalid model_type", status_code=400, media_type="text/plain")
 
