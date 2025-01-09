@@ -118,6 +118,9 @@ def generate(job):
             job["results"] = out_paths
             job["status"] = "done"
             job["notification"] = f"Job {job['id']} finished successfully."
+        elif response.status_code == 429:
+            job["status"] = "error"
+            job["error_message"] = "Daily limit reached. Upgrade or try again tomorrow."
         else:
             error_msg = f"Request failed: {response.status_code} {response.text}"
             logger.error(f"[generate] {error_msg}")
@@ -532,7 +535,7 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
         )
 
         for job in jobs:
-            row = layout.row(align=True)
+            row = layout.row(factor=0.28)
             row.label(text=f"Job {job['id']}")
             row.label(text=f"Status: {job['status']}")
 
