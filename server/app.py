@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 
 from .auth import init_auth
 
+__all__ = ["app", "rt", "oauth", "static_path"]
+
 load_dotenv()
 
 hdrs = (
@@ -22,7 +24,9 @@ app, rt = fast_app(
     hdrs=hdrs, # tailwind
     default_hdrs=True, # htmx
     static_path=static_path,
+    pico=False,
 )
-auth = init_auth(app)
+
+oauth = init_auth(app)
 
 serve()

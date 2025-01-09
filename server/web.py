@@ -1,7 +1,7 @@
 # fmt: off
 from fasthtml.common import *
 
-from .app import rt
+from .app import rt, oauth
 
 __all__ = ["home", "profile"]
 
@@ -32,7 +32,7 @@ async def home(request):
         Div(Span("Blender Copilot", cls="text-lg font-medium"),
             A("Login",
                    cls="text-sm px-4 py-2 bg-white/10 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-colors",
-                   href="/login"),
+                   href=oauth.login_link(request)),
             cls="nav-content flex justify-between items-center py-6 px-12 relative"),
         cls="fixed w-full z-50",
     )
@@ -94,4 +94,4 @@ async def home(request):
 @rt
 async def profile(request):
     user = request.session["user"]
-    return f"Welcome {user['name']}!"
+    return P(f"Welcome {user['name']}!"), A('Log out', href='/logout')

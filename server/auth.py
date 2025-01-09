@@ -5,11 +5,12 @@ from functools import wraps
 
 from loguru import logger
 from fasthtml.oauth import OAuth, GoogleAppClient
-from fasthtml.common import RedirectResponse, Request, Response
+from fasthtml.common import *
 
 from .users import create_or_update_user, get_user
 
 __all__ = ["init_auth", "verify_csrf_token"]
+
 
 def basic_auth(f):
     """Super basic auth for testing purposes"""
@@ -39,30 +40,38 @@ class Auth(OAuth):
     def get_auth(self, info, ident, session, state):
         """Called after successful OAuth login to handle user authentication"""
         logger.debug(f"Successfully authenticated user {ident}")
-        if info.get("email_verified"):
-            # Get tokens from OAuth response
-            tokens = self.cli.parse_response(info.get("code"))  # type: ignore
-            access_token = tokens["access_token"]
-            refresh_token = tokens.get("refresh_token")
-            # Google tokens typically expire in 1 hour
-            token_expiry = time() + 3600
+        logger.debug(f"Info: {info}")
+        logger.debug(f"Ident: {ident}")
+        logger.debug(f"Session: {session}")
+        logger.debug(f"State: {state}")
 
-            user = create_or_update_user(
-                ident=ident,
-                email=info.get("email"),
-                name=info.get("name"),
-                refresh_token=refresh_token,
-            )
+        if not info.get("email_verified", False):
+            return False
 
-            # Store access token in session
-            session["access_token"] = access_token
-            session["user_id"] = user.id
-            session["token_expiry"] = token_expiry
+        # # Get tokens from OAuth response
+        tokens = self.cli.parse_response(  # type: ignore
+            info.get("code"),
+            redirect_uri=self.redir_path,  # type: ignore
+        )
+        # access_token = tokens["access_token"]
+        # refresh_token = tokens.get("refresh_token")
+        # # Google tokens typically expire in 1 hour
+        # token_expiry = time() + 3600
 
-            return_url = state.get("return_to", "/") if state else "/"
-            logger.debug(f"Redirecting to {return_url}")
-            return RedirectResponse(return_url, status_code=303)
-        return False
+        # user = create_or_update_user(
+        #     ident=ident,
+        #     email=info.get("email"),
+        #     name=info.get("name"),
+        #     refresh_token=refresh_token,
+        # )
+
+        # # Store access token in session
+        # session["access_token"] = access_token
+        # session["user_id"] = user.id
+        # session["token_expiry"] = token_expiry
+
+        logger.debug("Redirecting to redirect url")
+        return self.redir_login(session)
 
     def check_invalid(self, req, session, auth):
         """Verify the current session is valid"""
@@ -80,7 +89,7 @@ class Auth(OAuth):
 
         try:
             # Verify token with Google
-            user_info = self.cli.get_info(access_token) # type: ignore
+            user_info = self.cli.get_info(access_token)  # type: ignore
             if not user_info or not user_info.get("sub"):
                 logger.warning("Invalid token response from Google")
                 session.clear()
@@ -94,6 +103,26 @@ class Auth(OAuth):
             logger.error(f"Token verification failed: {str(e)}")
             session.clear()
             return self.redir_login(session)
+
+
+# class Auth(OAuth):
+#     def get_auth(self, info, ident, session, state):
+#         logger.debug(f"Successfully authenticated user {ident}")
+#         if info.email_verified:
+#             tokens = self.cli.parse_response(info.get("code"))  # type: ignore
+#             access_token = tokens["access_token"]
+#             refresh_token = tokens.get("refresh_token")
+
+#             user = create_or_update_user(
+#                 ident=ident,
+#                 email=info.get("email"),
+#                 name=info.get("name"),
+#                 refresh_token=refresh_token,
+#             )
+#             session["user_id"] = user.id
+#             logger.debug("Redirecting to return url")
+#             return self.redir_login(session)
+#         return False
 
 
 def verify_csrf_token(request):
@@ -110,28 +139,45 @@ def verify_csrf_token(request):
 
 def init_auth(app):
     """Initialize authentication for the app"""
-    # Create OAuth handler with skip paths
-    oauth = Auth(app, client, skip=[
-        r'/favicon\.ico',
-        r'/static/.*',
-        r'.*\.css',
-        '/login',
-        '/',
-        r'.*\.mp4',
-    ])
+    oauth = Auth(
+        app,
+        client,
+        skip=[
+            r"/favicon\.ico",
+            r"/static/.*",
+            r".*\.css",
+            "/login",
+            "/",
+            "/redirect",
+            "/whoami",
+        ],
+    )
 
     @app.get("/login")
     def login(request):
-        # Get state from query params
+        print("Login endpoint called")
         state = request.query_params.get("state", {})
-
-        # Generate login link with state
         login_url = oauth.login_link(request, state=state)
-        return f'<a href="{login_url}">Login with Google</a>'
+        return A("Login with Google", href=login_url)
 
     @app.get("/logout")
     def logout(session):
+        print("Logout endpoint called")
         session.clear()
         return RedirectResponse("/", status_code=303)
+
+    @app.get("/whoami")
+    def whoami(request):
+        """Debug endpoint to check auth status"""
+        logger.debug("=== Whoami called ===")
+        logger.debug(f"Session: {request.session}")
+        logger.debug(f"User: {request.scope.get('user')}")
+        return JSONResponse(
+            {
+                "authenticated": bool(request.scope.get("user", False)),
+                "session": dict(request.session),
+                "user": request.scope.get("user", False),
+            }
+        )
 
     return oauth
