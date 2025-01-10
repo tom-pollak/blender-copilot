@@ -170,7 +170,7 @@ async def profile(req):
             Div(
                 P(f"{format(user.daily_calls, ',')} / {format(PLAN_LIMITS[user.plan], ',')}",
                   cls="text-2xl font-semibold"),
-                P(f"{format(calls_left, ',')} calls remaining",
+                P(f"{format(calls_left, ',')} remaining",
                   cls="text-xs text-slate-400 mt-1"),
                 cls="text-center"
             ),
