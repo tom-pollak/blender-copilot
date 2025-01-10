@@ -130,19 +130,40 @@ async def profile(req):
         href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/4.6.0/remixicon.min.css"
     )
 
-    def mk_header():
+    def mk_user_info():
         return Div(
             I(cls="ri-account-circle-2-fill text-4xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
             Div(
                 H1(f"Welcome, {user.name}!", cls="text-3xl font-bold text-white"),
                 Div(
                     Div(cls="w-2 h-2 rounded-full bg-green-400"),
-                    P(f"{user.plan.capitalize()} Plan · Active", cls="text-sm text-slate-400 ml-2"),
+                    P(f"{user.plan.capitalize()} Plan · Active",
+                      cls="text-sm text-slate-400 ml-2"),
                     cls="flex items-center mt-1"
                 ),
                 cls="ml-4"
             ),
-            cls="flex items-center mb-8"
+            cls="flex items-center"
+        )
+
+    def mk_upgrade_button():
+        button_text = "Upgrade" if user.plan == "free" else "Manage Subscription"
+        button_icon = "ri-arrow-up-circle-line" if user.plan == "free" else "ri-settings-3-line"
+        return A(
+            I(cls=f"{button_icon} mr-2"),
+            button_text,
+            href="/subscription",
+            cls="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        ),
+
+    def mk_header():
+        return Div(
+            Div(
+                mk_user_info(),
+                mk_upgrade_button(),
+                cls="flex items-center justify-between"
+            ),
+            cls="mb-8"
         )
 
     def mk_stats():
