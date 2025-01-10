@@ -7,7 +7,7 @@ import stripe
 from stripe.error import StripeError  # type: ignore
 from fasthtml.common import *
 
-from .db import User
+from .db import User, get_user
 from .app import rt, DOMAIN
 from .db import user_tbl
 
@@ -152,10 +152,23 @@ def webhook_received(req):
         if event.type == "customer.subscription.updated":
             subscription = event.data.object
             # Handle subscription update
-            user = user_tbl.get(subscription.metadata["user_id"])
+            user = get_user(subscription.metadata["user_id"])
+            if not user:
+                logger.error(f"User not found for subscription {subscription.id}")
+                return {"success": False, "error": "User not found"}
+            user.plan = subscription.plan.nickname
+            logger.info(f"Updated user {user.id} plan to {user.plan}")
+            user_tbl.update(user)
         elif event.type == "customer.subscription.deleted":
             subscription = event.data.object
             # Handle subscription cancellation
+            user = get_user(subscription.metadata["user_id"])
+            if not user:
+                logger.error(f"User not found for subscription {subscription.id}")
+                return {"success": False, "error": "User not found"}
+            user.plan = "free"
+            logger.info(f"Updated user {user.id} plan to {user.plan}")
+            user_tbl.update(user)
 
         elif event.type == "invoice.payment_failed":
             # Handle failed payment

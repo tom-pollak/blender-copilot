@@ -1,28 +1,30 @@
 from typing import Any, Literal
 
 
-PLANS = Literal["free", "premium"]
+PlansT = Literal["free", "premium"]
 
-PLAN_LIMITS: dict[PLANS, int] = {
+PLAN_LIMITS: dict[PlansT, int] = {
     "free": 10,  # Unauthenticated or free tier
     "premium": 200,  # Premium tier
 }
 
 
-PLAN_FEATURES: dict[PLANS, dict[str, Any]] = {
+PLANS: dict[PlansT, dict[str, Any]] = {
     "free": {
-        "price": 0,
+        "price": 0.0,
+        "limit": 10,
         "features": [
-            f"Up to {format(PLAN_LIMITS['free'], ',')} API calls per day",
+            "Up to 10 API calls per day",
             "Basic features",
             "Community support",
             "Standard response time",
         ],
     },
     "premium": {
-        "price": 29,
+        "price": 12.99,
+        "limit": 200,
         "features": [
-            f"Up to {format(PLAN_LIMITS['premium'], ',')} API calls per day",
+            "Up to 200 API calls per day",
             "Advanced features",
             "Priority support",
             "Custom configurations",

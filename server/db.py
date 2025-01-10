@@ -7,7 +7,7 @@ from loguru import logger
 from pathlib import Path
 from fastlite import NotFoundError
 
-from server.plans import PLANS
+from server.plans import PlansT
 
 db = database(Path(__file__).parent / "data" / "main.db")
 
@@ -23,7 +23,7 @@ class User:
     daily_calls: int  # Calls made today
     last_call_date: str  # Date of last API call
     last_call_time: str  # Time of last API call
-    plan: PLANS  # User's plan type
+    plan: PlansT  # User's plan type
     api_token: str  # API token
     stripe_customer_id: str | None  # Stripe customer ID
 

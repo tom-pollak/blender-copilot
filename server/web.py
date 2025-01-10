@@ -4,7 +4,7 @@ from datetime import datetime
 
 from .app import rt
 from .db import get_authenticated_user
-from .plans import PLAN_FEATURES, PLAN_LIMITS
+from .plans import PLANS
 
 
 @rt("/")
@@ -97,7 +97,7 @@ async def home(req):
 async def profile(req):
     user = get_authenticated_user(req)
     tok_display = f"{user.api_token[:12]}...{user.api_token[-8:]}"
-    calls_left = PLAN_LIMITS[user.plan] - user.daily_calls
+    calls_left = PLANS[user.plan]["limit"] - user.daily_calls
 
     def fmt_rel(date_str: str) -> str:
         dt = datetime.fromisoformat(date_str)
@@ -167,9 +167,9 @@ async def profile(req):
         Div(I(cls="ri-bar-chart-fill text-blue-400 text-xl"),
         P("API Calls Today", cls="text-sm text-slate-400 mt-1"),
             Div(
-                P(f"{format(user.daily_calls, ',')} / {format(PLAN_LIMITS[user.plan], ',')}",
+                P(f"{user.daily_calls} / {PLANS[user.plan]['limit']}",
                   cls="text-2xl font-semibold"),
-                P(f"{format(calls_left, ',')} remaining",
+                P(f"{calls_left} remaining",
                   cls="text-xs text-slate-400 mt-1"),
                 cls="text-center"
             ),
@@ -266,7 +266,7 @@ def subscription(req):
     )
 
     def plan_card(plan_name):
-        plan = PLAN_FEATURES[plan_name]
+        plan = PLANS[plan_name]
         is_current = user.plan == plan_name
 
         def get_button():
@@ -304,7 +304,7 @@ def subscription(req):
         )
 
     plans = Div(
-        *[plan_card(plan_name) for plan_name in PLAN_FEATURES.keys()],
+        *[plan_card(plan_name) for plan_name in PLANS.keys()],
         cls="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 max-w-4xl mx-auto"
     )
 
