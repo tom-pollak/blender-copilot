@@ -119,7 +119,7 @@ async def profile(request):
 
     icon_stylesheet = Link(
         rel="stylesheet",
-        href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/3.5.0/remixicon.min.css"
+        href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/4.6.0/remixicon.min.css"
     )
 
     # Format dates for display
@@ -161,7 +161,7 @@ async def profile(request):
                     # Profile header with avatar and status
                     Div(
                         Div(
-                            I(cls="ri-user-fill text-2xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
+                            I(cls="ri-account-circle-2-fill text-4xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
                             Div(
                                 H1(f"Welcome, {user.name}!",
                                    cls="text-3xl font-bold text-white"),
@@ -188,14 +188,14 @@ async def profile(request):
                                       cls="text-xs text-slate-400 mt-1"),
                                     cls="text-center"
                                 ),
-                                cls="text-center px-4"
+                                cls="text-center px-12"
                             ),
                             Div(
                                 I(cls="ri-time-fill text-blue-400 text-xl"),
                                 P("Last API Call", cls="text-sm text-slate-400 mt-1"),
                                 P(last_call_time,
                                   cls="text-2xl font-semibold"),
-                                cls="text-center px-4 border-l border-slate-800"
+                                cls="text-center px-12 border-l border-slate-800"
                             ),
                             cls="flex justify-center mb-8 bg-slate-950/50 rounded-lg py-4"
                         ),
