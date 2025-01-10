@@ -2,13 +2,13 @@
 from fasthtml.common import *
 from datetime import datetime
 
-from .app import rt, oauth
+from .app import rt
 from .users import get_authenticated_user
 from .plans import PLAN_FEATURES, PLAN_LIMITS
 
 
 @rt("/")
-async def home(request):
+async def home(req):
     hdrs = Style("""
             body {
                 background: #080808;
@@ -330,7 +330,6 @@ def subscription(req):
     )
 
     return Main(
-        stripe_js,
         icons,
         content
     )

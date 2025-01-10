@@ -79,10 +79,10 @@ class Subscription:
                 current_period_end=datetime.fromtimestamp(
                     subscription.current_period_end
                 ),
-                plan_name=subscription.plan.nickname,
-                amount=subscription.plan.amount / 100,
-                currency=subscription.plan.currency,
-                interval=subscription.plan.interval,
+                plan_name=subscription.plan.nickname,  # type: ignore
+                amount=subscription.plan.amount / 100,  # type: ignore
+                currency=subscription.plan.currency,  # type: ignore
+                interval=subscription.plan.interval,  # type: ignore
                 cancel_at_period_end=subscription.cancel_at_period_end,
             )
 
@@ -152,7 +152,7 @@ def webhook_received(req):
         if event.type == "customer.subscription.updated":
             subscription = event.data.object
             # Handle subscription update
-
+            user = user_tbl.get(subscription.metadata["user_id"])
         elif event.type == "customer.subscription.deleted":
             subscription = event.data.object
             # Handle subscription cancellation
