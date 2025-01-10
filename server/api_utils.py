@@ -4,7 +4,7 @@ from functools import wraps
 from fasthtml.common import *
 
 from .plans import PLAN_LIMITS
-from .users import User, get_user_by_api_token, IPUsage, ip_usage_tbl, user_tbl
+from .db import User, get_user_by_api_token, IPUsage, ip_usage_tbl, user_tbl
 
 def increment_api_calls(data: User | IPUsage, tbl, limit: int) -> bool:
     """Increment API calls and update last call date"""

@@ -7,9 +7,9 @@ import stripe
 from stripe.error import StripeError  # type: ignore
 from fasthtml.common import *
 
-from .users import User
+from .db import User
 from .app import rt, DOMAIN
-from .users import user_tbl
+from .db import user_tbl
 
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")

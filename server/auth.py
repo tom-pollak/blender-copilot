@@ -5,7 +5,7 @@ from loguru import logger
 from fasthtml.oauth import OAuth, GoogleAppClient, url_match
 from fasthtml.common import *
 
-from .users import create_or_update_user, get_user
+from .db import create_or_update_user, get_user
 
 __all__ = ["init_auth", "verify_csrf_token"]
 
@@ -41,22 +41,22 @@ class Auth(OAuth):
 
         return RedirectResponse("/profile", status_code=303)
 
-def verify_csrf_token(request):
+def verify_csrf_token(req: Request):
     """Verify CSRF token in request matches session token"""
-    session_token = request.session.get("csrf_token")
-    request_token = request.query_params.get("csrf_token")
+    session_token = req.session.get("csrf_token")
+    req_token = req.query_params.get("csrf_token")
 
     logger.debug("=== Verifying CSRF token ===")
 
-    if not session_token or not request_token:
+    if not session_token or not req_token:
         logger.debug("=== CSRF token not found ===")
         return False
 
     logger.debug(f"Session token: {session_token}")
-    logger.debug(f"Request token: {request_token}")
-    logger.debug(f"Comparison: {secrets.compare_digest(session_token, request_token)}")
+    logger.debug(f"Request token: {req_token}")
+    logger.debug(f"Comparison: {secrets.compare_digest(session_token, req_token)}")
 
-    return secrets.compare_digest(session_token, request_token)
+    return secrets.compare_digest(session_token, req_token)
 
 
 def init_auth(app):

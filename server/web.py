@@ -3,7 +3,7 @@ from fasthtml.common import *
 from datetime import datetime
 
 from .app import rt
-from .users import get_authenticated_user
+from .db import get_authenticated_user
 from .plans import PLAN_FEATURES, PLAN_LIMITS
 
 
