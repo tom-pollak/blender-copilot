@@ -82,7 +82,8 @@ def init_auth(app):
 
         state = request.query_params.get("state", {})
         login_url = oauth.login_link(request, state=state)
-        return A("Login with Google", href=login_url)
+        return RedirectResponse(login_url, status_code=303)
+        # return A("Login with Google", href=login_url)
 
     @app.get("/logout")
     def logout(session):

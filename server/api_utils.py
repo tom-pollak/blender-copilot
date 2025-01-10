@@ -5,9 +5,8 @@ from fasthtml.common import *
 from .users import User, get_user_by_api_token, IPUsage, ip_usage_tbl, user_tbl
 
 PLAN_LIMITS = {
-    "free": 20,  # Unauthenticated or free tier
-    "basic": 100,  # Default authenticated tier
-    "premium": 500,  # Premium tier
+    "free": 10,  # Unauthenticated or free tier
+    "premium": 200,  # Premium tier
 }
 
 
