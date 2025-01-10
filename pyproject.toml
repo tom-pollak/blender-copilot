@@ -22,4 +22,5 @@ dependencies = [
     "rembg>=2.0.61",
     "einops>=0.8.0",
     "torchvision>=0.20.1",
+    "stripe>=11.4.1",
 ]
