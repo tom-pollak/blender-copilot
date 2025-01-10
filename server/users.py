@@ -25,7 +25,10 @@ class User:
     last_call_time: str  # Time of last API call
     plan: PLANS  # User's plan type
     api_token: str  # API token
+    stripe_customer_id: str | None  # Stripe customer ID
 
+    def get_stripe_customer_id(self) -> str:
+        raise NotImplementedError("stripe_customer_id is not implemented")
 
 @dataclass
 class IPUsage:
@@ -86,21 +89,19 @@ def create_or_update_user(ident: str, email: str, name: str) -> User:
     return user_tbl[ident]
 
 
-def get_user(user_id: str) -> User | None:
+def get_user(req: Request) -> User | None:
     """Get user by ID"""
+    auth = req.session.get('auth')
+    if not auth: return None
+
     try:
-        return user_tbl.get(user_id)
+        return user_tbl.get(auth)
     except NotFoundError:
         return None
 
 def get_authenticated_user(req: Request) -> User:
     """If user is not found, raise HTTPException"""
-    user_id = req.session.get("auth")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    user = get_user(user_id)
-
+    user = get_user(req)
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return user

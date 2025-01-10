@@ -2,10 +2,9 @@
 from fasthtml.common import *
 from datetime import datetime
 
-from server.plans import PLAN_LIMITS
-
 from .app import rt, oauth
 from .users import get_authenticated_user
+from .plans import PLAN_FEATURES, PLAN_LIMITS
 
 
 @rt("/")
@@ -249,27 +248,6 @@ async def profile(req):
         page,
     )
 
-PLAN_FEATURES = {
-    "free": {
-        "price": 0,
-        "features": [
-            f"Up to {format(PLAN_LIMITS['free'], ',')} API calls per day",
-            "Basic features",
-            "Community support",
-            "Standard response time"
-        ]
-    },
-    "premium": {
-        "price": 29,
-        "features": [
-            f"Up to {format(PLAN_LIMITS['premium'], ',')} API calls per day",
-            "Advanced features",
-            "Priority support",
-            "Custom configurations",
-            "Usage analytics"
-        ]
-    }
-}
 
 @rt
 def subscription(req):
@@ -291,6 +269,20 @@ def subscription(req):
         plan = PLAN_FEATURES[plan_name]
         is_current = user.plan == plan_name
 
+        def get_button():
+            if plan_name == "free":
+                txt = "Current Plan" if is_current else "Free Plan"
+            elif plan_name == "premium":
+                txt = "Current Plan" if is_current else "Start Trial"
+            else:
+                raise HTTPException(status_code=500, detail=f"Invalid plan name: {plan_name}")
+
+            return Button(txt,
+                          disabled=is_current,
+                          cls=f"""w-full px-4 py-3 rounded-lg transition-colors mt-6
+                          {"bg-slate-800 text-slate-400 cursor-not-allowed" if is_current else
+                          "bg-blue-600 text-white hover:bg-blue-700"}""")
+
         return Div(
             Div(
                 H2(plan_name.capitalize(), cls="text-xl font-bold mb-1"),
@@ -305,13 +297,7 @@ def subscription(req):
                 ) for feature in plan['features']],
                 cls="flex-grow"
             ),
-            Button(
-                "Current Plan" if is_current else "Upgrade Now",
-                disabled=is_current,
-                cls=f"""w-full px-4 py-3 rounded-lg transition-colors mt-6
-                    {"bg-slate-800 text-slate-400 cursor-not-allowed" if is_current else
-                     "bg-blue-600 text-white hover:bg-blue-700"}"""
-            ),
+            get_button(),
             cls=f"""p-6 bg-slate-900 border
                 {"border-blue-600" if is_current else "border-slate-800"}
                 rounded-xl flex flex-col h-full"""
@@ -344,6 +330,7 @@ def subscription(req):
     )
 
     return Main(
+        stripe_js,
         icons,
         content
     )

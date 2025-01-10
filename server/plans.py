@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 
 PLANS = Literal["free", "premium"]
@@ -9,7 +9,7 @@ PLAN_LIMITS: dict[PLANS, int] = {
 }
 
 
-PLAN_FEATURES: dict[PLANS, dict[str, int | list[str]]] = {
+PLAN_FEATURES: dict[PLANS, dict[str, Any]] = {
     "free": {
         "price": 0,
         "features": [

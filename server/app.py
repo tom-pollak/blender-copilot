@@ -9,6 +9,8 @@ __all__ = ["app", "rt", "oauth", "ROOT_PATH"]
 
 load_dotenv()
 
+DOMAIN = "http://localhost:5001"
+
 hdrs = (
     Meta(charset="UTF-8"),
     Meta(

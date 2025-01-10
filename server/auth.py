@@ -77,15 +77,15 @@ def init_auth(app):
     )
 
     @app.get("/login")
-    def login(request):
+    def login(req):
         print("Login endpoint called")
 
         # Redirect to profile if logged in
-        if request.session.get('auth'):
+        if req.session.get('auth'):
             return RedirectResponse("/profile", status_code=303)
 
-        state = request.query_params.get("state", {})
-        login_url = oauth.login_link(request, state=state)
+        state = req.query_params.get("state", {})
+        login_url = oauth.login_link(req, state=state)
         return RedirectResponse(login_url, status_code=303)
         # return A("Login with Google", href=login_url)
 
@@ -96,23 +96,22 @@ def init_auth(app):
         return RedirectResponse("/", status_code=303)
 
     @app.get("/whoami")
-    def whoami(request):
+    def whoami(req):
         """Debug endpoint to check auth status"""
         # localhost route only
-        if not url_match(request.url, (r'^(localhost|127\.0\.0\.1)(:\d+)?$',)):
+        if not url_match(req.url, (r'^(localhost|127\.0\.0\.1)(:\d+)?$',)):
             raise HTTPException(status_code=404)
 
-        auth = request.session.get('auth')
-        user = get_user(auth)
+        user = get_user(req)
         user_data = asdict(user) if user else None
 
         logger.debug("=== Whoami called ===")
-        logger.debug(f"Session:\n{request.session}")
+        logger.debug(f"Session:\n{req.session}")
         logger.debug(f"User:\n{user}")
 
         return JSONResponse(
             {
-                "session": dict(request.session),
+                "session": dict(req.session),
                 "user": user_data
             }
         )
