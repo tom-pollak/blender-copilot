@@ -3,6 +3,7 @@ from fasthtml.common import *
 
 from .app import rt, oauth
 from .users import User, get_user
+from fasthtml.svg import Svg
 
 __all__ = ["home", "profile"]
 
@@ -98,40 +99,91 @@ async def profile(request):
     user = get_user(user_id)
     assert user is not None, "User not found in authenticated session"
 
-    # Add copy-to-clipboard functionality
+    # Add copy-to-clipboard functionality with visual feedback
     copy_script = Script("""
     function copyToken() {
         const token = document.getElementById('api-token');
         navigator.clipboard.writeText(token.textContent);
         const btn = document.getElementById('copy-btn');
-        btn.textContent = 'Copied!';
-        setTimeout(() => btn.textContent = 'Copy', 1000);
+        const icon = document.getElementById('copy-icon');
+        const text = document.getElementById('copy-text');
+
+        // Update button state
+        text.textContent = 'Copied!';
+        icon.classList.add('hidden');
+
+        // Reset after 2 seconds
+        setTimeout(() => {
+            text.textContent = 'Copy';
+            icon.classList.remove('hidden');
+        }, 2000);
     }
     """)
 
+    # Add Remix Icons stylesheet
+    icon_stylesheet = Link(
+        rel="stylesheet",
+        href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/3.5.0/remixicon.min.css"
+    )
+
+    # Truncate token for display but keep full value for copying
+    display_token = f"{user.api_token[:12]}...{user.api_token[-8:]}"
+
     return Main(
         copy_script,
+        icon_stylesheet,
         Div(
-            H1(f"Welcome, {user.name}!", cls="text-3xl font-bold mb-8"),
             Div(
-                H2("Your License Key", cls="text-xl font-medium mb-4"),
+                # Card container
+                Div(
+                    # Profile header with avatar
+                Div(
+                    I(cls="ri-user-fill text-2xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
+                    H1(f"Welcome, {user.name}!",
+                       cls="text-3xl font-bold text-white ml-4"),
+                    cls="flex items-center mb-8"
+                ),
+
+                # License key section
                 Div(
                     Div(
-                        P(user.api_token, id="api-token",
-                          cls="font-mono bg-gray-800 p-4 rounded-lg break-all"),
-                        Button("Copy", id="copy-btn",
-                               onclick="copyToken()",
-                               cls="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"),
-                        cls="space-y-2"
+                        I(cls="ri-key-2-fill text-slate-400"),
+                        P("Your License Key", cls="ml-2 text-sm text-slate-400"),
+                        cls="flex items-center mb-2"
                     ),
-                    cls="max-w-2xl"
+                    Div(
+                        Div(
+                            P(user.api_token, id="api-token",
+                              cls="hidden"),  # Hidden full token
+                            P(display_token,
+                              cls="font-mono text-sm"),  # Visible truncated token
+                            Div(
+                                Button(
+                                    Span("Copy", id="copy-text"),
+                                    I(cls="ri-clipboard-line ml-2", id="copy-icon"),
+                                    onclick="copyToken()",
+                                    cls="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                ),
+                                cls="ml-3"
+                            ),
+                            cls="flex items-center justify-between bg-slate-950 p-3 rounded-lg"
+                        ),
+                        cls="max-w-2xl"
+                    ),
+                    cls="space-y-4"
                 ),
-                cls="mt-8"
+
+                # Logout button
+                A(
+                    I(cls="ri-logout-box-r-line mr-2"),
+                    "Log out",
+                    href="/logout",
+                    cls="mt-8 inline-flex items-center px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
+                ),
+
+                cls="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6"
+                ),
             ),
-            A("Log out",
-              href="/logout",
-              cls="mt-8 inline-block px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"),
-            cls="p-8"
-        ),
-        cls="text-white bg-gray-900 min-h-screen"
+            cls="min-h-screen bg-slate-950 text-white p-8"
+        )
     )
