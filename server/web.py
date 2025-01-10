@@ -1,11 +1,11 @@
 # fmt: off
 from fasthtml.common import *
+from datetime import datetime
 
 from server.api_utils import PLAN_LIMITS
 
 from .app import rt, oauth
-from .users import User, get_user
-from fasthtml.svg import Svg
+from .users import get_authenticated_user
 
 __all__ = ["home", "profile"]
 
@@ -96,60 +96,48 @@ async def home(request):
     )
 
 @rt
-async def profile(request):
-    user_id = request.session["user_id"]
-    user = get_user(user_id)
-    assert user is not None, "User not found in authenticated session"
+async def profile(req):
+    user = get_authenticated_user(req)
 
-    copy_script = Script("""
-    function copyToken() {
-        const token = document.getElementById('api-token');
-        navigator.clipboard.writeText(token.textContent);
-        const btn = document.getElementById('copy-btn');
-        const icon = document.getElementById('copy-icon');
-        const text = document.getElementById('copy-text');
-        text.textContent = 'Copied!';
-        icon.classList.add('hidden');
-        setTimeout(() => {
-            text.textContent = 'Copy';
-            icon.classList.remove('hidden');
-        }, 2000);
-    }
+    def fmt_rel(date_str: str) -> str:
+        dt = datetime.fromisoformat(date_str)
+        delta = datetime.now() - dt
+
+        if delta.days > 0: return f"{delta.days}d ago"
+        h = delta.seconds // 3600
+        if h > 0: return f"{h}h ago"
+        m = delta.seconds // 60
+        if m > 0: return f"{m}m ago"
+        return "just now"
+
+    def mk_copy_js(): return Script("""
+        function copyToken() {
+            const tok = document.getElementById('api-token');
+            navigator.clipboard.writeText(tok.textContent);
+            const icon = document.getElementById('copy-icon');
+            const txt = document.getElementById('copy-text');
+            txt.textContent = 'Copied!';
+            icon.classList.add('hidden');
+            setTimeout(() => {
+                txt.textContent = 'Copy';
+                icon.classList.remove('hidden');
+            }, 2000);
+        }
     """)
 
-    icon_stylesheet = Link(
+    def mk_styles(): return Link(
         rel="stylesheet",
         href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/4.6.0/remixicon.min.css"
     )
 
-    # Format dates for display
-    from datetime import datetime
-
-    def format_date(date_str: str) -> str:
-        date = datetime.fromisoformat(date_str)
-        return date.strftime("%B %d, %Y at %H:%M")
-
-    def format_relative_time(date_str: str) -> str:
-        date = datetime.fromisoformat(date_str)
-        now = datetime.now()
-        delta = now - date
-
-        if delta.days > 0:
-            return f"{delta.days}d ago"
-        elif delta.seconds > 3600:
-            return f"{delta.seconds // 3600}h ago"
-        elif delta.seconds > 60:
-            return f"{delta.seconds // 60}m ago"
-        else:
-            return "just now"
-
-    display_token = f"{user.api_token[:12]}...{user.api_token[-8:]}"
-    last_call_time = format_relative_time(user.last_call_time)
-    n_calls_left_today = PLAN_LIMITS[user.plan] - user.daily_calls
+    # Prepare display data
+    tok_display = f"{user.api_token[:12]}...{user.api_token[-8:]}"
+    last_call = fmt_rel(user.last_call_time)
+    calls_left = PLAN_LIMITS[user.plan] - user.daily_calls
 
     return Main(
-        copy_script,
-        icon_stylesheet,
+        mk_copy_js(),
+        mk_styles(),
         Div(
             # Gradient background decoration
             Div(
@@ -184,7 +172,7 @@ async def profile(request):
                                 Div(
                                     P(f"{format(user.daily_calls, ',')} / {format(PLAN_LIMITS[user.plan], ',')}",
                                       cls="text-2xl font-semibold"),
-                                    P(f"{format(n_calls_left_today, ',')} calls remaining",
+                                    P(f"{format(calls_left, ',')} calls remaining",
                                       cls="text-xs text-slate-400 mt-1"),
                                     cls="text-center"
                                 ),
@@ -193,7 +181,7 @@ async def profile(request):
                             Div(
                                 I(cls="ri-time-fill text-blue-400 text-xl"),
                                 P("Last API Call", cls="text-sm text-slate-400 mt-1"),
-                                P(last_call_time,
+                                P(last_call,
                                   cls="text-2xl font-semibold"),
                                 cls="text-center px-12 border-l border-slate-800"
                             ),
@@ -211,7 +199,7 @@ async def profile(request):
                                 Div(
                                     P(user.api_token, id="api-token",
                                       cls="hidden"),
-                                    P(display_token,
+                                    P(tok_display,
                                       cls="font-mono text-sm"),
                                     Div(
                                         Button(
@@ -232,7 +220,7 @@ async def profile(request):
                         # Footer with account info and logout
                         Div(
                             Div(
-                                P(f"Last login: {format_relative_time(user.last_login)}",
+                                P(f"Last login: {fmt_rel(user.last_login)}",
                                   cls="text-sm text-slate-500 mt-1"),
                                 P(f"Email: {user.email}",
                                   cls="text-sm text-slate-500 mt-1")
