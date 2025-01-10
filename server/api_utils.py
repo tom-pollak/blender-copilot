@@ -1,5 +1,5 @@
 from loguru import logger
-from datetime import date
+from datetime import date, datetime
 from functools import wraps
 from fasthtml.common import *
 from .users import User, get_user_by_api_token, IPUsage, ip_usage_tbl, user_tbl
@@ -10,9 +10,11 @@ PLAN_LIMITS = {
     "premium": 500,  # Premium tier
 }
 
+
 def increment_api_calls(data: User | IPUsage, tbl, limit: int) -> bool:
     """Increment API calls and update last call date"""
     today = date.today().isoformat()
+    now = datetime.now().isoformat()
     if data.last_call_date != today:
         data.daily_calls = 0
         logger.debug(f"Resetting daily calls for {data}")
@@ -22,8 +24,11 @@ def increment_api_calls(data: User | IPUsage, tbl, limit: int) -> bool:
         return False
 
     logger.debug(f"Incrementing API calls for {data}")
+    if hasattr(data, "api_calls"):
+        data.api_calls += 1  # type: ignore
     data.daily_calls += 1
     data.last_call_date = today
+    data.last_call_time = now
 
     tbl.update(data)  # update db
     return True
@@ -44,7 +49,9 @@ def rate_limited(f):
             token = token.removeprefix("Bearer ")
             user = get_user_by_api_token(token)
             logger.debug(f"User: {user}")
-            if not user or not increment_api_calls(user, user_tbl, PLAN_LIMITS[user.plan]):
+            if not user or not increment_api_calls(
+                user, user_tbl, PLAN_LIMITS[user.plan]
+            ):
                 return err_resp
         # Anonymous users -- no IP
         elif not req.client:

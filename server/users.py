@@ -19,6 +19,7 @@ class User:
     api_calls: int  # Total API calls
     daily_calls: int  # Calls made today
     last_call_date: str  # Date of last API call
+    last_call_time: str  # Time of last API call
     plan: str  # User's plan type
     api_token: str  # API token
 
@@ -28,6 +29,7 @@ class IPUsage:
     ip: str
     daily_calls: int
     last_call_date: str
+    last_call_time: str
 
 
 # Create if don't exist

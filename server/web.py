@@ -1,6 +1,8 @@
 # fmt: off
 from fasthtml.common import *
 
+from server.api_utils import PLAN_LIMITS
+
 from .app import rt, oauth
 from .users import User, get_user
 from fasthtml.svg import Svg
@@ -120,7 +122,30 @@ async def profile(request):
         href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/3.5.0/remixicon.min.css"
     )
 
+    # Format dates for display
+    from datetime import datetime
+
+    def format_date(date_str: str) -> str:
+        date = datetime.fromisoformat(date_str)
+        return date.strftime("%B %d, %Y at %H:%M")
+
+    def format_relative_time(date_str: str) -> str:
+        date = datetime.fromisoformat(date_str)
+        now = datetime.now()
+        delta = now - date
+
+        if delta.days > 0:
+            return f"{delta.days}d ago"
+        elif delta.seconds > 3600:
+            return f"{delta.seconds // 3600}h ago"
+        elif delta.seconds > 60:
+            return f"{delta.seconds // 60}m ago"
+        else:
+            return "just now"
+
     display_token = f"{user.api_token[:12]}...{user.api_token[-8:]}"
+    last_call_time = format_relative_time(user.last_call_time)
+    n_calls_left_today = PLAN_LIMITS[user.plan] - user.daily_calls
 
     return Main(
         copy_script,
@@ -142,7 +167,7 @@ async def profile(request):
                                    cls="text-3xl font-bold text-white"),
                                 Div(
                                     Div(cls="w-2 h-2 rounded-full bg-green-400"),
-                                    P("Pro Account · Active",
+                                    P(f"{user.plan.capitalize()} Plan · Active",
                                       cls="text-sm text-slate-400 ml-2"),
                                     cls="flex items-center mt-1"
                                 ),
@@ -155,14 +180,20 @@ async def profile(request):
                         Div(
                             Div(
                                 I(cls="ri-bar-chart-fill text-blue-400 text-xl"),
-                                P("API Calls", cls="text-sm text-slate-400 mt-1"),
-                                P("1,234", cls="text-2xl font-semibold"),
+                                P("Total API Calls", cls="text-sm text-slate-400 mt-1"),
+                                P(format(user.api_calls, ","), cls="text-2xl font-semibold"),
+                                Div(
+                                    P(f"{format(user.daily_calls, ',')} today",
+                                      cls="text-xs text-slate-400 mt-1"),
+                                    cls="text-center"
+                                ),
                                 cls="text-center px-4"
                             ),
                             Div(
                                 I(cls="ri-time-fill text-blue-400 text-xl"),
-                                P("Last Used", cls="text-sm text-slate-400 mt-1"),
-                                P("2h ago", cls="text-2xl font-semibold"),
+                                P("Last API Call", cls="text-sm text-slate-400 mt-1"),
+                                P(last_call_time,
+                                  cls="text-2xl font-semibold"),
                                 cls="text-center px-4 border-l border-slate-800"
                             ),
                             cls="flex justify-center mb-8 bg-slate-950/50 rounded-lg py-4"
@@ -197,12 +228,12 @@ async def profile(request):
                             cls="space-y-4"
                         ),
 
-                        # Footer with version and logout
+                        # Footer with account info and logout
                         Div(
                             Div(
-                                P("API Version: v2.1.0",
-                                  cls="text-sm text-slate-500"),
-                                P("Last login: Today at 14:32",
+                                P(f"Last login: {format_relative_time(user.last_login)}",
+                                  cls="text-sm text-slate-500 mt-1"),
+                                P(f"Email: {user.email}",
                                   cls="text-sm text-slate-500 mt-1")
                             ),
                             A(
