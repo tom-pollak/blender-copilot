@@ -19,7 +19,7 @@ client = GoogleAppClient(
 class Auth(OAuth):
     def get_auth(self, info, ident, session, state):
         """Called after successful OAuth login to handle user authentication"""
-        logger.debug(f"Successfully authenticated user {ident}")
+        logger.debug(f"=== Successfully authenticated user {ident} ===")
         logger.debug(f"Info: {info}")
         logger.debug(f"Ident: {ident}")
         logger.debug(f"Session: {session}")
@@ -33,14 +33,12 @@ class Auth(OAuth):
         if not email or not name:
             return False
 
-        user = create_or_update_user(
+        create_or_update_user(
             ident=ident,
             email=info.get("email"),
             name=info.get("name"),
         )
-        session["user_id"] = user.id
 
-        logger.debug("Redirecting to profile")
         return RedirectResponse("/profile", status_code=303)
 
 def verify_csrf_token(request):
@@ -48,10 +46,16 @@ def verify_csrf_token(request):
     session_token = request.session.get("csrf_token")
     request_token = request.query_params.get("csrf_token")
 
+    logger.debug("=== Verifying CSRF token ===")
+
     if not session_token or not request_token:
+        logger.debug("=== CSRF token not found ===")
         return False
 
-    # Use constant time comparison to prevent timing attacks
+    logger.debug(f"Session token: {session_token}")
+    logger.debug(f"Request token: {request_token}")
+    logger.debug(f"Comparison: {secrets.compare_digest(session_token, request_token)}")
+
     return secrets.compare_digest(session_token, request_token)
 
 
@@ -98,11 +102,14 @@ def init_auth(app):
         if not url_match(request.url, (r'^(localhost|127\.0\.0\.1)(:\d+)?$',)):
             raise HTTPException(status_code=404)
 
-        logger.debug("=== Whoami called ===")
-        logger.debug(f"Session: {request.session}")
-        user_id = request.session.get('user_id')
-        user = get_user(user_id)
+        auth = request.session.get('auth')
+        user = get_user(auth)
         user_data = asdict(user) if user else None
+
+        logger.debug("=== Whoami called ===")
+        logger.debug(f"Session:\n{request.session}")
+        logger.debug(f"User:\n{user}")
+
         return JSONResponse(
             {
                 "session": dict(request.session),

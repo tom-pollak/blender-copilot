@@ -95,7 +95,7 @@ def get_user(user_id: str) -> User | None:
 
 def get_authenticated_user(req: Request) -> User:
     """If user is not found, raise HTTPException"""
-    user_id = req.session.get("user_id")
+    user_id = req.session.get("auth")
     if not user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
