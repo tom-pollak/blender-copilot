@@ -99,7 +99,6 @@ async def profile(request):
     user = get_user(user_id)
     assert user is not None, "User not found in authenticated session"
 
-    # Add copy-to-clipboard functionality with visual feedback
     copy_script = Script("""
     function copyToken() {
         const token = document.getElementById('api-token');
@@ -107,12 +106,8 @@ async def profile(request):
         const btn = document.getElementById('copy-btn');
         const icon = document.getElementById('copy-icon');
         const text = document.getElementById('copy-text');
-
-        // Update button state
         text.textContent = 'Copied!';
         icon.classList.add('hidden');
-
-        // Reset after 2 seconds
         setTimeout(() => {
             text.textContent = 'Copy';
             icon.classList.remove('hidden');
@@ -120,70 +115,110 @@ async def profile(request):
     }
     """)
 
-    # Add Remix Icons stylesheet
     icon_stylesheet = Link(
         rel="stylesheet",
         href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/3.5.0/remixicon.min.css"
     )
 
-    # Truncate token for display but keep full value for copying
     display_token = f"{user.api_token[:12]}...{user.api_token[-8:]}"
 
     return Main(
         copy_script,
         icon_stylesheet,
         Div(
+            # Gradient background decoration
+            Div(
+                cls="absolute top-0 left-0 w-full h-64 bg-gradient-to-br from-blue-600/10 to-purple-600/10"
+            ),
             Div(
                 # Card container
                 Div(
-                    # Profile header with avatar
-                Div(
-                    I(cls="ri-user-fill text-2xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
-                    H1(f"Welcome, {user.name}!",
-                       cls="text-3xl font-bold text-white ml-4"),
-                    cls="flex items-center mb-8"
-                ),
-
-                # License key section
-                Div(
-                    Div(
-                        I(cls="ri-key-2-fill text-slate-400"),
-                        P("Your License Key", cls="ml-2 text-sm text-slate-400"),
-                        cls="flex items-center mb-2"
-                    ),
+                    # Profile header with avatar and status
                     Div(
                         Div(
-                            P(user.api_token, id="api-token",
-                              cls="hidden"),  # Hidden full token
-                            P(display_token,
-                              cls="font-mono text-sm"),  # Visible truncated token
+                            I(cls="ri-user-fill text-2xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
                             Div(
-                                Button(
-                                    Span("Copy", id="copy-text"),
-                                    I(cls="ri-clipboard-line ml-2", id="copy-icon"),
-                                    onclick="copyToken()",
-                                    cls="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                H1(f"Welcome, {user.name}!",
+                                   cls="text-3xl font-bold text-white"),
+                                Div(
+                                    Div(cls="w-2 h-2 rounded-full bg-green-400"),
+                                    P("Pro Account · Active",
+                                      cls="text-sm text-slate-400 ml-2"),
+                                    cls="flex items-center mt-1"
                                 ),
-                                cls="ml-3"
+                                cls="ml-4"
                             ),
-                            cls="flex items-center justify-between bg-slate-950 p-3 rounded-lg"
+                            cls="flex items-center mb-8"
                         ),
-                        cls="max-w-2xl"
+
+                        # Usage stats
+                        Div(
+                            Div(
+                                I(cls="ri-bar-chart-fill text-blue-400 text-xl"),
+                                P("API Calls", cls="text-sm text-slate-400 mt-1"),
+                                P("1,234", cls="text-2xl font-semibold"),
+                                cls="text-center px-4"
+                            ),
+                            Div(
+                                I(cls="ri-time-fill text-blue-400 text-xl"),
+                                P("Last Used", cls="text-sm text-slate-400 mt-1"),
+                                P("2h ago", cls="text-2xl font-semibold"),
+                                cls="text-center px-4 border-l border-slate-800"
+                            ),
+                            cls="flex justify-center mb-8 bg-slate-950/50 rounded-lg py-4"
+                        ),
+
+                        # License key section
+                        Div(
+                            Div(
+                                I(cls="ri-key-2-fill text-slate-400"),
+                                P("Your License Key", cls="ml-2 text-sm text-slate-400"),
+                                cls="flex items-center mb-2"
+                            ),
+                            Div(
+                                Div(
+                                    P(user.api_token, id="api-token",
+                                      cls="hidden"),
+                                    P(display_token,
+                                      cls="font-mono text-sm"),
+                                    Div(
+                                        Button(
+                                            Span("Copy", id="copy-text"),
+                                            I(cls="ri-clipboard-line ml-2", id="copy-icon"),
+                                            onclick="copyToken()",
+                                            cls="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                        ),
+                                        cls="ml-3"
+                                    ),
+                                    cls="flex items-center justify-between bg-slate-950 p-3 rounded-lg"
+                                ),
+                                cls="max-w-2xl"
+                            ),
+                            cls="space-y-4"
+                        ),
+
+                        # Footer with version and logout
+                        Div(
+                            Div(
+                                P("API Version: v2.1.0",
+                                  cls="text-sm text-slate-500"),
+                                P("Last login: Today at 14:32",
+                                  cls="text-sm text-slate-500 mt-1")
+                            ),
+                            A(
+                                I(cls="ri-logout-box-r-line mr-2"),
+                                "Log out",
+                                href="/logout",
+                                cls="inline-flex items-center px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
+                            ),
+                            cls="flex items-center justify-between mt-8 pt-6 border-t border-slate-800"
+                        ),
+
+                        cls="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6"
                     ),
-                    cls="space-y-4"
                 ),
-
-                # Logout button
-                A(
-                    I(cls="ri-logout-box-r-line mr-2"),
-                    "Log out",
-                    href="/logout",
-                    cls="mt-8 inline-flex items-center px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
-                ),
-
-                cls="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6"
-                ),
+                cls="relative z-10 max-w-4xl mx-auto"
             ),
-            cls="min-h-screen bg-slate-950 text-white p-8"
+            cls="min-h-screen bg-slate-950 text-white p-8 relative"
         )
     )
