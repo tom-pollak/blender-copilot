@@ -25,6 +25,14 @@ def _not_found(req, exc):
         style="margin:10px auto; max-width:600px; text-align:center"
     )
 
+def _unauthorized(req, exc):
+    req.session.clear()
+    return Container(
+        H1("401", style="margin:30px 0; font-size:4em; line-height:1; letter-spacing:-1px; font-family: Times; font-weight: bold"),
+        P(Strong("Unauthorized :(", style="font-family: Times; font-weight: bold")),
+        style="margin:10px auto; max-width:600px; text-align:center"
+    )
+
 
 ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 
@@ -33,7 +41,7 @@ app, rt = fast_app(
     hdrs=hdrs, # tailwind
     default_hdrs=True, # htmx
     static_path=os.path.join(ROOT_PATH, "static"),
-    exception_handlers={404: _not_found},
+    exception_handlers={404: _not_found, 401: _unauthorized},
     pico=False,
 )
 

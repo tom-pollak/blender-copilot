@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import secrets
 from datetime import datetime, date
+from fastapi import HTTPException, Request
 from fasthtml.common import database
 from loguru import logger
 from pathlib import Path
@@ -89,6 +90,18 @@ def get_user(user_id: str) -> User | None:
         return user_tbl.get(user_id)
     except NotFoundError:
         return None
+
+def get_authenticated_user(req: Request) -> User:
+    """If user is not found, raise HTTPException"""
+    user_id = req.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = get_user(user_id)
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return user
 
 
 def get_user_by_api_token(api_token: str) -> User | None:
