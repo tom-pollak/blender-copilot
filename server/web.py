@@ -212,17 +212,18 @@ async def profile(req):
     )
 
     footer = Div(
-    Div(
-        P(f"Last login: {fmt_rel(user.last_login)}", cls="text-sm text-slate-500 mt-1"),
-            P(f"Email: {user.email}", cls="text-sm text-slate-500 mt-1")
+        Div(
+            P(f"Last login: {fmt_rel(user.last_login)}", cls="text-sm text-slate-500 mt-1"),
+            P(f"Email: {user.email}", cls="text-sm text-slate-500 mt-1"),
+            A(
+                I(cls="ri-logout-box-r-line mr-2"),
+                "Log out",
+                href="/logout",
+                cls="inline-flex items-center px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors mt-4 sm:mt-0"
+            ),
+            cls="flex flex-col sm:flex-row items-start sm:items-center justify-between"
         ),
-        A(
-            I(cls="ri-logout-box-r-line mr-2"),
-            "Log out",
-            href="/logout",
-            cls="inline-flex items-center px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
-        ),
-        cls="flex items-center justify-between mt-8 pt-6 border-t border-slate-800"
+        cls="mt-8 pt-6 border-t border-slate-800"
     )
 
     card = Div(
