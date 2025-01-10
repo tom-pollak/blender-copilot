@@ -147,10 +147,11 @@ async def profile(req):
 
     upgrade_text = "Upgrade" if user.plan == "free" else "Manage Subscription"
     upgrade_icon = "ri-arrow-up-circle-line" if user.plan == "free" else "ri-settings-3-line"
+    upgrade_href = "/upgrade" if user.plan == "free" else "/manage-billing"
     upgrade_button = A(
         I(cls=f"{upgrade_icon} mr-2"),
         upgrade_text,
-        href="/subscription",
+        href=upgrade_href,
         cls="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
     )
 
@@ -250,8 +251,9 @@ async def profile(req):
 
 
 @rt
-def subscription(req):
+def upgrade(req):
     user = get_authenticated_user(req)
+    if user.plan != "free": return RedirectResponse("/profile", status_code=303)
 
     icons = Link(
         rel="stylesheet",
@@ -269,19 +271,14 @@ def subscription(req):
         plan = PLANS[plan_name]
         is_current = user.plan == plan_name
 
-        def get_button():
-            if plan_name == "free":
-                txt = "Current Plan" if is_current else "Free Plan"
-            elif plan_name == "premium":
-                txt = "Current Plan" if is_current else "Start Trial"
-            else:
-                raise HTTPException(status_code=500, detail=f"Invalid plan name: {plan_name}")
-
-            return Button(txt,
-                          disabled=is_current,
-                          cls=f"""w-full px-4 py-3 rounded-lg transition-colors mt-6
-                          {"bg-slate-800 text-slate-400 cursor-not-allowed" if is_current else
-                          "bg-blue-600 text-white hover:bg-blue-700"}""")
+        if plan_name == "free":
+            txt = "Current Plan" if is_current else "Free Plan"
+            href = "/profile"
+        elif plan_name == "premium":
+            txt = "Current Plan" if is_current else "Start Trial"
+            href = "/manage-billing"
+        else:
+            raise HTTPException(status_code=500, detail=f"Invalid plan name: {plan_name}")
 
         return Div(
             Div(
@@ -297,7 +294,14 @@ def subscription(req):
                 ) for feature in plan['features']],
                 cls="flex-grow"
             ),
-            get_button(),
+            Button(
+                txt,
+                disabled=is_current,
+                href=href,
+                cls=f"""w-full px-4 py-3 rounded-lg transition-colors mt-6
+                {"bg-slate-800 text-slate-400 cursor-not-allowed" if is_current else
+                "bg-blue-600 text-white hover:bg-blue-700"}"""
+            ),
             cls=f"""p-6 bg-slate-900 border
                 {"border-blue-600" if is_current else "border-slate-800"}
                 rounded-xl flex flex-col h-full"""

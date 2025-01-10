@@ -23,12 +23,11 @@ class User:
     daily_calls: int  # Calls made today
     last_call_date: str  # Date of last API call
     last_call_time: str  # Time of last API call
-    plan: PlansT  # User's plan type
-    api_token: str  # API token
-    stripe_customer_id: str | None  # Stripe customer ID
+    plan: PlansT  # User's plan type: free, premium
+    api_token: str
+    stripe_customer_id: str | None
+    stripe_subscription_id: str | None
 
-    def get_stripe_customer_id(self) -> str:
-        raise NotImplementedError("stripe_customer_id is not implemented")
 
 @dataclass
 class IPUsage:
@@ -114,6 +113,13 @@ def get_user_by_api_token(api_token: str) -> User | None:
         where_args=dict(api_token=api_token),
         limit=1,
     )
-    if res:
-        return res[0]
-    return None
+    return res[0] if res else None
+
+def get_user_by_email(email: str) -> User | None:
+    """Get user by email"""
+    res = user_tbl(
+        where="email = :email",
+        where_args=dict(email=email),
+        limit=1,
+    )
+    return res[0] if res else None

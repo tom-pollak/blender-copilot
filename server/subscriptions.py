@@ -1,181 +1,136 @@
-from __future__ import annotations
 import os
-from datetime import datetime
-from loguru import logger
-
 import stripe
-from stripe.error import StripeError  # type: ignore
+
+from loguru import logger
 from fasthtml.common import *
 
-from .db import User, get_user
 from .app import rt, DOMAIN
-from .db import user_tbl
-
+from .db import User, user_tbl, get_authenticated_user
+from .plans import PlansT
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+# WEBHOOK_ENDPOINT_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+WEBHOOK_ENDPOINT_SECRET = "whsec_681e078f76ca423a17f843921b1e8374341477f9222ba2018b8c3b04c60b7f0e"
 
-SUBSCRIPTION_PRICE_ID = "price_H5ggYwtDq4fbrJ"
+PAYMENT_LINK_URL = "https://buy.stripe.com/test_cN2cQwgQ59iBguc3cc"
 
 
-@patch()
-def get_stripe_customer_id(self: User) -> str:
-    if self.stripe_customer_id:
-        logger.info(
-            f"Using existing Stripe customer {self.stripe_customer_id} for user {self.id}"
+@rt("/manage-billing")
+def manage_billing(req):
+    user = get_authenticated_user(req)
+    if not user.stripe_customer_id:
+        return Titled("No subscription", P("You have no Stripe customer ID."))
+
+    portal_session = stripe.billing_portal.Session.create(
+        customer=user.stripe_customer_id,
+        return_url=f"https://{DOMAIN}/profile",
+    )
+    return RedirectResponse(portal_session.url, status_code=303)
+
+
+def _update_user(
+    user: User,
+    plan: PlansT,
+    subscription_id: str | None,
+    customer_id: str | None = None,
+):
+    """
+    Update user with new plan, subscription ID, and customer ID.
+
+    If customer_id is None, then it is not updated.
+    """
+    logger.info(f"Upgraded user {user.id} ({user.email}) to {plan}.")
+    user.plan = plan
+    user.stripe_subscription_id = subscription_id
+    if customer_id:
+        user.stripe_customer_id = customer_id
+    user_tbl.update(user)
+
+
+def sub_upgrade(session):
+    """
+    Payment Link or Checkout completed.
+    - session["subscription"] => subscription ID
+    - session["customer"]     => customer ID
+    - session["customer_details"]["email"] => user email
+    """
+    logger.debug("Checkout session completed, upgrading user")
+    subscription_id = session.get("subscription")
+    customer_id = session.get("customer")
+    if not subscription_id or not customer_id:
+        logger.warning(
+            "Session missing subscription or customer. Possibly one-time payment."
         )
-        return self.stripe_customer_id
+        return
 
-    try:
-        customer = stripe.Customer.create(
-            email=self.email,
-            name=self.name,
-            metadata={
-                "user_id": self.id,
-            },
-        )
-        self.stripe_customer_id = customer.id
-    except StripeError as e:
-        logger.error(f"Error creating Stripe customer for user {self.id}: {e}")
-        raise e
+    email = session["customer_details"]["email"]
+    user = user_tbl(
+        where="email = :email",
+        where_args=dict(email=email),
+        limit=1,
+    )
+    if not user:
+        logger.warning(f"No user found with {email=}, ignoring.")
+        return
 
-    logger.info(f"Created Stripe customer {self.stripe_customer_id} for user {self.id}")
-    user_tbl.update(self)
-    return self.stripe_customer_id
+    _update_user(user[0], "premium", customer_id, subscription_id)
 
 
-@dataclass
-class Subscription:
-    id: str
-    status: str
-    current_period_end: datetime
-    plan_name: str
-    amount: int
-    currency: str
-    interval: str
-    cancel_at_period_end: bool
+def sub_free(session):
+    """
+    The invoice or PaymentIntent failed. You can notify the user, mark them as 'past_due', etc.
+    """
+    logger.debug("Subscription free, updating user")
+    sub_id = session.get("subscription")
+    if not sub_id:
+        logger.warning("Invoice missing subscription. Ignoring.")
+        return
 
-    @classmethod
-    def from_user(cls, user: User) -> Subscription | None:
-        try:
-            subscriptions = stripe.Subscription.list(
-                customer=user.get_stripe_customer_id(),
-                status="active",
-                expand=["data.plan"],  # type: ignore
-            )
+    user = user_tbl(
+        where="stripe_subscription_id = :sid", where_args={"sid": sub_id}, limit=1
+    )
+    if not user:
+        logger.warning(f"Subscription {sub_id} not found in DB.")
+        return
 
-            if not subscriptions.data:
-                logger.info(
-                    f"No active subscription found for customer {user.get_stripe_customer_id()}"
-                )
-                return None
-
-            subscription = subscriptions.data[0]
-            logger.info(
-                f"Active subscription found for customer {user.get_stripe_customer_id()}: {subscription.id}"
-            )
-            return Subscription(
-                id=subscription.id,
-                status=subscription.status,
-                current_period_end=datetime.fromtimestamp(
-                    subscription.current_period_end
-                ),
-                plan_name=subscription.plan.nickname,  # type: ignore
-                amount=subscription.plan.amount / 100,  # type: ignore
-                currency=subscription.plan.currency,  # type: ignore
-                interval=subscription.plan.interval,  # type: ignore
-                cancel_at_period_end=subscription.cancel_at_period_end,
-            )
-
-        except StripeError as e:
-            logger.error(f"Stripe error: {str(e)}")
-            raise
-        except Exception as e:
-            logger.error(f"Error: {str(e)}")
-            raise
+    _update_user(user[0], "free", None)
 
 
-@rt("/subscription/create")
-def create_checkout_session(req, user: User):
-    try:
-        checkout_session = stripe.checkout.Session.create(
-            customer=user.get_stripe_customer_id(),
-            payment_method_types=["card"],
-            line_items=[{
-                "price": SUBSCRIPTION_PRICE_ID,
-                "quantity": 1,
-            }],
-            mode="subscription",
-            success_url=f"{DOMAIN}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{DOMAIN}/subscription/cancel",
-        )
-        assert checkout_session.url is not None
-        return RedirectResponse(checkout_session.url, status_code=303)
-    except Exception as e:
-        logger.error(f"Error creating checkout session: {e}")
-        return {"success": False, "error": str(e)}
+@rt("/stripe/webhook", methods=["POST"])
+async def stripe_webhook(req: Request):
+    logger.debug("Stripe webhook called")
+    # data = await req.json()
+    data = await req.body()
 
-
-@rt("/subscription/success")
-def success(req):
-    return "success"
-
-
-@rt("/subscription/cancel")
-def cancel_subscription(user: User):
-    subscription = Subscription.from_user(user)
-    if not subscription:
-        return {"success": False, "error": "No active subscription found"}
-
-    try:
-        canceled_subscription = stripe.Subscription.modify(
-            subscription.id, cancel_at_period_end=True
-        )
-        return {
-            "success": True,
-            "end_date": datetime.fromtimestamp(
-                canceled_subscription.current_period_end
-            ),
-        }
-    except StripeError as e:
-        return {"success": False, "error": str(e)}
-
-@rt("/webhook", methods=["POST"])
-def webhook_received(req):
-    payload = req.body.read()
-    sig_header = req.headers.get("stripe-signature")
+    sig_header = req.headers.get("Stripe-Signature")
+    if not sig_header:
+        logger.warning("Missing Stripe-Signature header")
+        raise HTTPException(400, "Missing Stripe-Signature header")
 
     try:
         event = stripe.Webhook.construct_event(
-            payload, sig_header, os.getenv("STRIPE_WEBHOOK_SECRET")
+            data, sig_header, WEBHOOK_ENDPOINT_SECRET
         )
+    except stripe.error.SignatureVerificationError:  # type: ignore
+        logger.warning("Invalid signature")
+        raise HTTPException(400, "Invalid signature")
 
-        if event.type == "customer.subscription.updated":
-            subscription = event.data.object
-            # Handle subscription update
-            user = get_user(subscription.metadata["user_id"])
-            if not user:
-                logger.error(f"User not found for subscription {subscription.id}")
-                return {"success": False, "error": "User not found"}
-            user.plan = subscription.plan.nickname
-            logger.info(f"Updated user {user.id} plan to {user.plan}")
-            user_tbl.update(user)
-        elif event.type == "customer.subscription.deleted":
-            subscription = event.data.object
-            # Handle subscription cancellation
-            user = get_user(subscription.metadata["user_id"])
-            if not user:
-                logger.error(f"User not found for subscription {subscription.id}")
-                return {"success": False, "error": "User not found"}
-            user.plan = "free"
-            logger.info(f"Updated user {user.id} plan to {user.plan}")
-            user_tbl.update(user)
+    event_type = event["type"]
+    obj = event["data"]["object"]
+    logger.debug(f"Event type: {event_type}")
+    # logger.debug(f"Object: {obj}")
 
-        elif event.type == "invoice.payment_failed":
-            # Handle failed payment
-            pass
+    if event_type == "checkout.session.completed":
+        sub_upgrade(obj)
+    elif event_type in (
+        "customer.subscription.deleted",
+        "invoice.payment_failed",
+        "invoice.payment_action_required",
+    ):
+        sub_free(obj)
+    elif event_type == "customer.subscription.updated":
+        # optional: handle updated subscription status
+        pass
+    # etc. as needed
 
-        return {"success": True}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"success": False, "error": str(e)}
-
+    return JSONResponse({"status": "ok"})

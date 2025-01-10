@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 
+from loguru import logger
 from fasthtml.common import *
 
 from .auth import init_auth
@@ -21,6 +22,7 @@ hdrs = (
 )
 
 def _not_found(req, exc):
+    logger.debug("Hit 404")
     return Container(
         H1("404", style="margin:30px 0; font-size:4em; line-height:1; letter-spacing:-1px; font-family: Times; font-weight: bold"),
         P(Strong("Page not found :(", style="font-family: Times; font-weight: bold")),
@@ -28,6 +30,7 @@ def _not_found(req, exc):
     )
 
 def _unauthorized(req, exc):
+    logger.debug("Hit 401")
     req.session.clear()
     return Container(
         H1("401", style="margin:30px 0; font-size:4em; line-height:1; letter-spacing:-1px; font-family: Times; font-weight: bold"),

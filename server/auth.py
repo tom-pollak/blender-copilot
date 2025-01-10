@@ -41,23 +41,28 @@ class Auth(OAuth):
 
         return RedirectResponse("/profile", status_code=303)
 
-def verify_csrf_token(req: Request):
-    """Verify CSRF token in request matches session token"""
+def verify_csrf_token(req):
     session_token = req.session.get("csrf_token")
     req_token = req.query_params.get("csrf_token")
 
     logger.debug("=== Verifying CSRF token ===")
-
     if not session_token or not req_token:
         logger.debug("=== CSRF token not found ===")
         return False
 
-    logger.debug(f"Session token: {session_token}")
-    logger.debug(f"Request token: {req_token}")
-    logger.debug(f"Comparison: {secrets.compare_digest(session_token, req_token)}")
-
     return secrets.compare_digest(session_token, req_token)
 
+def csrf_protect(func):
+    """
+    Decorator that checks CSRF token before calling the handler.
+    Raise 403 if verification fails.
+    """
+    @functools.wraps(func)
+    def wrapper(req, *args, **kwargs):
+        if not verify_csrf_token(req):
+            raise HTTPException(status_code=403, detail="CSRF verification failed.")
+        return func(req, *args, **kwargs)
+    return wrapper
 
 def init_auth(app):
     """Initialize authentication for the app"""
@@ -72,7 +77,8 @@ def init_auth(app):
             "/",
             "/redirect",
             "/whoami",
-            r"/infer/.*"
+            r"/infer/.*",
+            r"/stripe/.*",
         ],
     )
 
@@ -90,6 +96,7 @@ def init_auth(app):
         # return A("Login with Google", href=login_url)
 
     @app.get("/logout")
+    @csrf_protect
     def logout(session):
         print("Logout endpoint called")
         session.clear()
