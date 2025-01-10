@@ -7,8 +7,6 @@ from server.api_utils import PLAN_LIMITS
 from .app import rt, oauth
 from .users import get_authenticated_user
 
-__all__ = ["home", "profile"]
-
 @rt("/")
 async def home(request):
     hdrs = Style("""
@@ -98,6 +96,8 @@ async def home(request):
 @rt
 async def profile(req):
     user = get_authenticated_user(req)
+    tok_display = f"{user.api_token[:12]}...{user.api_token[-8:]}"
+    calls_left = PLAN_LIMITS[user.plan] - user.daily_calls
 
     def fmt_rel(date_str: str) -> str:
         dt = datetime.fromisoformat(date_str)
@@ -110,7 +110,7 @@ async def profile(req):
         if m > 0: return f"{m}m ago"
         return "just now"
 
-    def mk_copy_js(): return Script("""
+    copy_js = Script("""
         function copyToken() {
             const tok = document.getElementById('api-token');
             navigator.clipboard.writeText(tok.textContent);
@@ -125,131 +125,129 @@ async def profile(req):
         }
     """)
 
-    def mk_icons(): return Link(
+    icons = Link(
         rel="stylesheet",
         href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/4.6.0/remixicon.min.css"
     )
 
-    def mk_user_info():
-        return Div(
-            I(cls="ri-account-circle-2-fill text-4xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
+    user_info = Div(
+        I(cls="ri-account-circle-2-fill text-4xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
+        Div(
+        H1(f"Welcome, {user.name}!", cls="text-3xl font-bold text-white"),
             Div(
-                H1(f"Welcome, {user.name}!", cls="text-3xl font-bold text-white"),
-                Div(
-                    Div(cls="w-2 h-2 rounded-full bg-green-400"),
-                    P(f"{user.plan.capitalize()} Plan · Active",
-                      cls="text-sm text-slate-400 ml-2"),
-                    cls="flex items-center mt-1"
-                ),
-                cls="ml-4"
+                Div(cls="w-2 h-2 rounded-full bg-green-400"),
+                P(f"{user.plan.capitalize()} Plan · Active",
+                  cls="text-sm text-slate-400 ml-2"),
+                cls="flex items-center mt-1"
             ),
-            cls="flex items-center"
-        )
-
-    def mk_upgrade_button():
-        button_text = "Upgrade" if user.plan == "free" else "Manage Subscription"
-        button_icon = "ri-arrow-up-circle-line" if user.plan == "free" else "ri-settings-3-line"
-        return A(
-            I(cls=f"{button_icon} mr-2"),
-            button_text,
-            href="/subscription",
-            cls="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            cls="ml-4"
         ),
+        cls="flex items-center"
+    )
 
-    def mk_header():
-        return Div(
+    upgrade_text = "Upgrade" if user.plan == "free" else "Manage Subscription"
+    upgrade_icon = "ri-arrow-up-circle-line" if user.plan == "free" else "ri-settings-3-line"
+    upgrade_button = A(
+        I(cls=f"{upgrade_icon} mr-2"),
+        upgrade_text,
+        href="/subscription",
+        cls="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+    )
+
+    header = Div(
+        Div(
+            user_info,
+            upgrade_button,
+            cls="flex items-center justify-between"
+        ),
+        cls="mb-8"
+    )
+
+    stats = Div(
+        Div(I(cls="ri-bar-chart-fill text-blue-400 text-xl"),
+        P("API Calls Today", cls="text-sm text-slate-400 mt-1"),
             Div(
-                mk_user_info(),
-                mk_upgrade_button(),
-                cls="flex items-center justify-between"
+                P(f"{format(user.daily_calls, ',')} / {format(PLAN_LIMITS[user.plan], ',')}",
+                  cls="text-2xl font-semibold"),
+                P(f"{format(calls_left, ',')} calls remaining",
+                  cls="text-xs text-slate-400 mt-1"),
+                cls="text-center"
             ),
-            cls="mb-8"
-        )
+            cls="text-center px-12"
+        ),
+        Div(
+            I(cls="ri-time-fill text-blue-400 text-xl"),
+            P("Last API Call", cls="text-sm text-slate-400 mt-1"),
+            P(fmt_rel(user.last_call_time), cls="text-2xl font-semibold"),
+            cls="text-center px-12 border-l border-slate-800"
+        ),
+        cls="flex justify-center mb-8 bg-slate-950/50 rounded-lg py-4"
+    )
 
-    def mk_stats():
-        calls_left = PLAN_LIMITS[user.plan] - user.daily_calls
-        return Div(
-            Div(I(cls="ri-bar-chart-fill text-blue-400 text-xl"),
-                P("API Calls Today", cls="text-sm text-slate-400 mt-1"),
+    _license = Div(
+        Div(
+            I(cls="ri-key-2-fill text-slate-400"),
+            P("Your License Key", cls="ml-2 text-sm text-slate-400"),
+            cls="flex items-center mb-2"
+        ),
+        Div(
+            Div(
+                P(user.api_token, id="api-token", cls="hidden"),
+                P(tok_display, cls="font-mono text-sm"),
                 Div(
-                    P(f"{format(user.daily_calls, ',')} / {format(PLAN_LIMITS[user.plan], ',')}",
-                      cls="text-2xl font-semibold"),
-                    P(f"{format(calls_left, ',')} calls remaining",
-                      cls="text-xs text-slate-400 mt-1"),
-                    cls="text-center"
-                ),
-                cls="text-center px-12"
-            ),
-            Div(
-                I(cls="ri-time-fill text-blue-400 text-xl"),
-                P("Last API Call", cls="text-sm text-slate-400 mt-1"),
-                P(fmt_rel(user.last_call_time), cls="text-2xl font-semibold"),
-                cls="text-center px-12 border-l border-slate-800"
-            ),
-            cls="flex justify-center mb-8 bg-slate-950/50 rounded-lg py-4"
-        )
-
-    def mk_license():
-        tok_display = f"{user.api_token[:12]}...{user.api_token[-8:]}"
-        return Div(
-            Div(
-                I(cls="ri-key-2-fill text-slate-400"),
-                P("Your License Key", cls="ml-2 text-sm text-slate-400"),
-                cls="flex items-center mb-2"
-            ),
-            Div(
-                Div(
-                    P(user.api_token, id="api-token", cls="hidden"),
-                    P(tok_display, cls="font-mono text-sm"),
-                    Div(
-                        Button(
-                            Span("Copy", id="copy-text"),
-                            I(cls="ri-clipboard-line ml-2", id="copy-icon"),
-                            onclick="copyToken()",
-                            cls="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                        ),
-                        cls="ml-3"
+                    Button(
+                        Span("Copy", id="copy-text"),
+                        I(cls="ri-clipboard-line ml-2", id="copy-icon"),
+                        onclick="copyToken()",
+                        cls="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                     ),
-                    cls="flex items-center justify-between bg-slate-950 p-3 rounded-lg"
+                    cls="ml-3"
                 ),
-                cls="max-w-2xl"
+                cls="flex items-center justify-between bg-slate-950 p-3 rounded-lg"
             ),
-            cls="space-y-4"
-        )
+            cls="max-w-2xl"
+        ),
+        cls="space-y-4"
+    )
 
-    def mk_footer():
-        return Div(
-            Div(
-                P(f"Last login: {fmt_rel(user.last_login)}", cls="text-sm text-slate-500 mt-1"),
-                P(f"Email: {user.email}", cls="text-sm text-slate-500 mt-1")
-            ),
-            A(
-                I(cls="ri-logout-box-r-line mr-2"),
-                "Log out",
-                href="/logout",
-                cls="inline-flex items-center px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
-            ),
-            cls="flex items-center justify-between mt-8 pt-6 border-t border-slate-800"
-        )
+    footer = Div(
+    Div(
+        P(f"Last login: {fmt_rel(user.last_login)}", cls="text-sm text-slate-500 mt-1"),
+            P(f"Email: {user.email}", cls="text-sm text-slate-500 mt-1")
+        ),
+        A(
+            I(cls="ri-logout-box-r-line mr-2"),
+            "Log out",
+            href="/logout",
+            cls="inline-flex items-center px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
+        ),
+        cls="flex items-center justify-between mt-8 pt-6 border-t border-slate-800"
+    )
 
-    def mk_card():
-        return Div(
-            mk_header(),
-            mk_stats(),
-            mk_license(),
-            mk_footer(),
-            cls="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6"
-        )
+    card = Div(
+        header,
+        stats,
+        _license,
+        footer,
+        cls="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6"
+    )
 
-    def mk_page():
-        return Div(
-            Div(cls="absolute top-0 left-0 w-full h-64 bg-gradient-to-br from-blue-600/10 to-purple-600/10"),
-            Div(mk_card(), cls="relative z-10 max-w-4xl mx-auto"),
-            cls="min-h-screen bg-slate-950 text-white p-8 relative"
-        )
+    page = Div(
+        Div(cls="absolute top-0 left-0 w-full h-64 bg-gradient-to-br from-blue-600/10 to-purple-600/10"),
+        Div(card, cls="relative z-10 max-w-4xl mx-auto"),
+        cls="min-h-screen bg-slate-950 text-white p-8 relative"
+    )
 
     return Main(
-        mk_copy_js(),
-        mk_icons(),
-        mk_page(),
+        copy_js,
+        icons,
+        page,
+    )
+
+@rt
+def subscription(req):
+    return Main(
+        Div(
+            H1("Subscription"),
+        )
     )
