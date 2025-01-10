@@ -132,16 +132,16 @@ async def profile(req):
     )
 
     user_info = Div(
-        I(cls="ri-account-circle-2-fill text-4xl text-white h-12 w-12 rounded-full bg-blue-600 flex items-center justify-center"),
+        I(cls="ri-account-circle-2-fill text-4xl text-white h-12 w-12 rounded-full bg-blue-600 [@media(max-width:420px)]:hidden flex items-center justify-center"),
         Div(
-        H1(f"Welcome, {user.name}!", cls="text-3xl font-bold text-white"),
+            H1(f"Welcome, {user.name}!", cls="text-3xl font-bold text-white"),
             Div(
                 Div(cls="w-2 h-2 rounded-full bg-green-400"),
                 P(f"{user.plan.capitalize()} Plan · Active",
                   cls="text-sm text-slate-400 ml-2"),
                 cls="flex items-center mt-1"
             ),
-            cls="ml-4"
+            cls="[@media(max-width:420px)]:ml-0 ml-4"
         ),
         cls="flex items-center"
     )
@@ -159,7 +159,7 @@ async def profile(req):
         Div(
             user_info,
             upgrade_button,
-            cls="flex items-center justify-between"
+            cls="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0"
         ),
         cls="mb-8"
     )
@@ -174,13 +174,13 @@ async def profile(req):
                   cls="text-xs text-slate-400 mt-1"),
                 cls="text-center"
             ),
-            cls="text-center px-12"
+            cls="text-center px-4 sm:px-12"
         ),
         Div(
             I(cls="ri-time-fill text-blue-400 text-xl"),
             P("Last API Call", cls="text-sm text-slate-400 mt-1"),
             P(fmt_rel(user.last_call_time), cls="text-2xl font-semibold"),
-            cls="text-center px-12 border-l border-slate-800"
+            cls="text-center px-4 sm:px-12 border-l border-slate-800"
         ),
         cls="flex justify-center mb-8 bg-slate-950/50 rounded-lg py-4"
     )
@@ -202,9 +202,9 @@ async def profile(req):
                         onclick="copyToken()",
                         cls="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                     ),
-                    cls="ml-3"
+                    cls="ml-0 mt-3 sm:ml-3 sm:mt-0"
                 ),
-                cls="flex items-center justify-between bg-slate-950 p-3 rounded-lg"
+                cls="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-950 p-3 rounded-lg"
             ),
             cls="max-w-2xl"
         ),
@@ -230,13 +230,13 @@ async def profile(req):
         stats,
         _license,
         footer,
-        cls="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6"
+        cls="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-6"
     )
 
     page = Div(
         Div(cls="absolute top-0 left-0 w-full h-64 bg-gradient-to-br from-blue-600/10 to-purple-600/10"),
         Div(card, cls="relative z-10 max-w-4xl mx-auto"),
-        cls="min-h-screen bg-slate-950 text-white p-8 relative"
+        cls="min-h-screen bg-slate-950 text-white p-4 sm:p-8 relative"
     )
 
     return Main(
