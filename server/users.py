@@ -70,6 +70,7 @@ def create_or_update_user(ident: str, email: str, name: str) -> User:
                 "email": email,
                 "name": name,
                 "last_call_date": today,
+                "last_call_time": now,
                 "created_at": now,
                 "api_calls": 0,
                 "daily_calls": 0,

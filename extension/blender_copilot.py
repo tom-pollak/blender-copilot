@@ -90,7 +90,7 @@ def generate(job):
             files = None
 
         logger.info(f"[generate] Requesting {job['text_prompt']}")
-        token = "XGEkPCb26H6-tj-Ts3kVqQSkfRooD9NJCmtkraz3Iyc"
+        token = "WfZ1RSadChvs-mTGAul5azWziczgrEEbauZGQz8xot0"
         response = requests.get(
             f"{SERVER_URL}{ENDPOINTS[endpoint]}",
             headers={"Authorization": f"Bearer {token}"},
@@ -535,7 +535,7 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
         )
 
         for job in jobs:
-            row = layout.row(factor=0.28)
+            row = layout.row().split(factor=0.28)
             row.label(text=f"Job {job['id']}")
             row.label(text=f"Status: {job['status']}")
 

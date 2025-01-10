@@ -180,10 +180,11 @@ async def profile(request):
                         Div(
                             Div(
                                 I(cls="ri-bar-chart-fill text-blue-400 text-xl"),
-                                P("Total API Calls", cls="text-sm text-slate-400 mt-1"),
-                                P(format(user.api_calls, ","), cls="text-2xl font-semibold"),
+                                P("API Calls Today", cls="text-sm text-slate-400 mt-1"),
                                 Div(
-                                    P(f"{format(user.daily_calls, ',')} today",
+                                    P(f"{format(user.daily_calls, ',')} / {format(PLAN_LIMITS[user.plan], ',')}",
+                                      cls="text-2xl font-semibold"),
+                                    P(f"{format(n_calls_left_today, ',')} calls remaining",
                                       cls="text-xs text-slate-400 mt-1"),
                                     cls="text-center"
                                 ),
