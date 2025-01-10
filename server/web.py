@@ -187,7 +187,7 @@ async def profile(req):
     _license = Div(
         Div(
             I(cls="ri-key-2-fill text-slate-400"),
-            P("Your License Key", cls="ml-2 text-sm text-slate-400"),
+            P("Your License Key", cls="ml-2 text-md text-slate-400"),
             cls="flex items-center mb-2"
         ),
         Div(
