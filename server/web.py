@@ -2,10 +2,11 @@
 from fasthtml.common import *
 from datetime import datetime
 
-from server.api_utils import PLAN_LIMITS
+from server.plans import PLAN_LIMITS
 
 from .app import rt, oauth
 from .users import get_authenticated_user
+
 
 @rt("/")
 async def home(request):
@@ -34,7 +35,7 @@ async def home(request):
         Div(Span("Blender Copilot", cls="text-lg font-medium"),
             A("Login",
                    cls="text-sm px-4 py-2 bg-white/10 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-colors",
-                   href=oauth.login_link(request)),
+                   href="/login"),
             cls="nav-content flex justify-between items-center py-6 px-12 relative"),
         cls="fixed w-full z-50",
     )
@@ -244,10 +245,101 @@ async def profile(req):
         page,
     )
 
+PLAN_FEATURES = {
+    "free": {
+        "price": 0,
+        "features": [
+            f"Up to {format(PLAN_LIMITS['free'], ',')} API calls per day",
+            "Basic features",
+            "Community support",
+            "Standard response time"
+        ]
+    },
+    "premium": {
+        "price": 29,
+        "features": [
+            f"Up to {format(PLAN_LIMITS['premium'], ',')} API calls per day",
+            "Advanced features",
+            "Priority support",
+            "Custom configurations",
+            "Usage analytics"
+        ]
+    }
+}
+
 @rt
 def subscription(req):
-    return Main(
-        Div(
-            H1("Subscription"),
+    user = get_authenticated_user(req)
+
+    icons = Link(
+        rel="stylesheet",
+        href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/4.6.0/remixicon.min.css"
+    )
+
+    header = Div(
+        H1("Choose Your Plan", cls="text-3xl font-bold text-white mb-2"),
+        P("Upgrade to unlock higher API limits and advanced features",
+          cls="text-slate-400 mb-8"),
+        cls="text-center"
+    )
+
+    def plan_card(plan_name):
+        plan = PLAN_FEATURES[plan_name]
+        is_current = user.plan == plan_name
+
+        return Div(
+            Div(
+                H2(plan_name.capitalize(), cls="text-xl font-bold mb-1"),
+                P(f"${plan['price']}/month", cls="text-2xl font-bold text-blue-400"),
+                cls="mb-6"
+            ),
+            Div(
+                *[Div(
+                    I(cls="ri-check-line mr-2 text-blue-400"),
+                    P(feature, cls="text-slate-300"),
+                    cls="flex items-center mb-3"
+                ) for feature in plan['features']],
+                cls="flex-grow"
+            ),
+            Button(
+                "Current Plan" if is_current else "Upgrade Now",
+                disabled=is_current,
+                cls=f"""w-full px-4 py-3 rounded-lg transition-colors mt-6
+                    {"bg-slate-800 text-slate-400 cursor-not-allowed" if is_current else
+                     "bg-blue-600 text-white hover:bg-blue-700"}"""
+            ),
+            cls=f"""p-6 bg-slate-900 border
+                {"border-blue-600" if is_current else "border-slate-800"}
+                rounded-xl flex flex-col h-full"""
         )
+
+    plans = Div(
+        *[plan_card(plan_name) for plan_name in PLAN_FEATURES.keys()],
+        cls="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 max-w-4xl mx-auto"
+    )
+
+    footer = Div(
+        A(
+            I(cls="ri-arrow-left-line mr-2"),
+            "Back to Profile",
+            href="/profile",
+            cls="inline-flex items-center px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
+        ),
+        cls="flex justify-center"
+    )
+
+    content = Div(
+        Div(cls="absolute top-0 left-0 w-full h-64 bg-gradient-to-br from-blue-600/10 to-purple-600/10"),
+        Div(
+            header,
+            plans,
+            footer,
+            cls="relative z-10 max-w-5xl mx-auto"
+        ),
+        cls="min-h-screen bg-slate-950 text-white p-8 relative"
+    )
+
+    return Main(
+        icons,
+        content
     )

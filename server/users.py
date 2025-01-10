@@ -7,6 +7,8 @@ from loguru import logger
 from pathlib import Path
 from fastlite import NotFoundError
 
+from server.plans import PLANS
+
 db = database(Path(__file__).parent / "data" / "main.db")
 
 
@@ -21,7 +23,7 @@ class User:
     daily_calls: int  # Calls made today
     last_call_date: str  # Date of last API call
     last_call_time: str  # Time of last API call
-    plan: str  # User's plan type
+    plan: PLANS  # User's plan type
     api_token: str  # API token
 
 

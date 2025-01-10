@@ -4,12 +4,6 @@ from functools import wraps
 from fasthtml.common import *
 from .users import User, get_user_by_api_token, IPUsage, ip_usage_tbl, user_tbl
 
-PLAN_LIMITS = {
-    "free": 10,  # Unauthenticated or free tier
-    "premium": 200,  # Premium tier
-}
-
-
 def increment_api_calls(data: User | IPUsage, tbl, limit: int) -> bool:
     """Increment API calls and update last call date"""
     today = date.today().isoformat()
