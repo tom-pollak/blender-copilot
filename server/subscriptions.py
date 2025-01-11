@@ -11,7 +11,6 @@ from .plans import PlansT
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 WEBHOOK_ENDPOINT_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-PAYMENT_LINK_URL = os.getenv("STRIPE_PAYMENT_LINK_URL")
 
 
 @rt("/manage-billing")
@@ -26,7 +25,7 @@ def manage_billing(req):
     logger.debug("User has Stripe customer ID, creating portal session")
     portal_session = stripe.billing_portal.Session.create(
         customer=user.stripe_customer_id,
-        return_url=f"https://{DOMAIN}/profile",
+        return_url=f"{DOMAIN}/profile",
     )
     return RedirectResponse(portal_session.url, status_code=303)
 

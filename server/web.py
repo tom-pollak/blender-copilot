@@ -6,6 +6,9 @@ from .app import rt
 from .db import get_authenticated_user
 from .plans import PLANS
 
+PAYMENT_LINK_URL = os.getenv("STRIPE_PAYMENT_LINK_URL")
+assert PAYMENT_LINK_URL is not None
+
 
 @rt("/")
 async def home(req):
@@ -269,14 +272,14 @@ def upgrade(req):
 
     def plan_card(plan_name):
         plan = PLANS[plan_name]
-        is_current = user.plan == plan_name
-
         if plan_name == "free":
-            txt = "Current Plan" if is_current else "Free Plan"
-            href = "/profile"
+            txt = "Current Plan"
+            href = None
+            is_current = True
         elif plan_name == "premium":
-            txt = "Current Plan" if is_current else "Start Trial"
-            href = "/manage-billing"
+            txt = "Start Trial"
+            href = PAYMENT_LINK_URL
+            is_current = False
         else:
             raise HTTPException(status_code=500, detail=f"Invalid plan name: {plan_name}")
 
@@ -294,11 +297,11 @@ def upgrade(req):
                 ) for feature in plan['features']],
                 cls="flex-grow"
             ),
-            Button(
+            A(
                 txt,
                 disabled=is_current,
-                href=href,
-                cls=f"""w-full px-4 py-3 rounded-lg transition-colors mt-6
+                href=href, # type: ignore
+                cls=f"""w-full px-4 py-3 rounded-lg transition-colors mt-6 text-center
                 {"bg-slate-800 text-slate-400 cursor-not-allowed" if is_current else
                 "bg-blue-600 text-white hover:bg-blue-700"}"""
             ),
