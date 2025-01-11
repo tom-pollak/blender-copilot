@@ -18,7 +18,7 @@ hdrs = (
         name="viewport",
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0",
     ),
-    Script(src="https://cdn.tailwindcss.com/3.4.16"),
+    Script(src="https://cdn.tailwindcss.com/3.4.16"), # TODO: change to npm
 )
 
 def _not_found(req, exc):
