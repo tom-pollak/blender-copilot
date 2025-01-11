@@ -568,16 +568,21 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
         )
 
         for job in jobs:
-            row = layout.row().split(factor=0.28)
-            row.label(text=f"Job {job['id']}")
-            row.label(text=f"Status: {job['status']}")
+            # Split the row with more space for status, less for operators
+            row = layout.row().split(factor=0.7)  # Increase factor to push operators right
+            status_row = row.row()
+            status_row.label(text=f"Job {job['id']}")
+            status_row.label(text=f"Status: {job['status']}")
 
-            op = row.operator("bcopilot.cancel_job", text="", icon='X')
-            op.job_id = job["id"]
+            # Right-aligned operator buttons
+            sub_row = row.row(align=True)
+            sub_row.alignment = 'RIGHT'  # Right align the buttons
+            cancel_op = sub_row.operator("bcopilot.cancel_job", text="", icon='X', emboss=True)
+            cancel_op.job_id = job["id"]
 
             if job["status"] == "done":
-                op = row.operator("bcopilot.apply_job_result", text="Apply")
-                op.job_id = job["id"]
+                apply_op = sub_row.operator("bcopilot.apply_job_result", text="Apply", emboss=True)
+                apply_op.job_id = job["id"]
 
 
 # ------------------------------------------------------------------------
