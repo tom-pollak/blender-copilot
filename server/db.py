@@ -9,7 +9,7 @@ from fastlite import NotFoundError
 
 from server.plans import PlansT
 
-db = database(Path(__file__).parent / "data" / "main.db")
+db = database(Path(__file__).parents[1] / "data" / "main.db")
 
 
 @dataclass

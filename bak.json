@@ -1,8 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS",
-    "buildCommand": "curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.local/bin/env && uv sync"
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "./Dockerfile"
   },
   "deploy": {
     "region": "us-west2",

@@ -241,7 +241,7 @@ requires-dist = [
     { name = "numpy", specifier = "<2" },
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
-    { name = "python-fasthtml", specifier = ">=0.10.2" },
+    { name = "python-fasthtml", specifier = ">=0.12.0" },
     { name = "rembg", specifier = ">=2.0.61" },
     { name = "sqlite-minutils", specifier = ">=4.0.3" },
     { name = "stripe", specifier = ">=11.4.1" },
@@ -1667,7 +1667,7 @@ wheels = [
 
 [[package]]
 name = "python-fasthtml"
-version = "0.10.2"
+version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1681,9 +1681,9 @@ dependencies = [
     { name = "starlette" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4b/9e/cad96032d75a2e21c9219bc0b1c60a0700a7ed283a33bd88ace4987ae7f7/python_fasthtml-0.10.2.tar.gz", hash = "sha256:e654c03ae55e5633463b2ba9a2ded81f6784d9cc29af4c435ced84d8d07f7af6", size = 56178 }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/56/333adb8b47f269e4cb65e5c0c1a5cf2d6c80ca8a8681aaef179682492cb3/python_fasthtml-0.12.0.tar.gz", hash = "sha256:b3caa830dc91796c356fbe282eaca858adba67d63f08543ec1a03a3506bd3505", size = 56424 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/5f/aa842b2197c32c3db29c283502954a416c9b54a8ef3b003e98b3f05e9004/python_fasthtml-0.10.2-py3-none-any.whl", hash = "sha256:829ce906bc4e54ced82bb92570b5cdaffc9c3469f1bfa721fda05e4c511e86fc", size = 59402 },
+    { url = "https://files.pythonhosted.org/packages/5c/69/b4015f83d1609d9fd08e2b39417f06bb359ceaa72b839bbf82f56668adf1/python_fasthtml-0.12.0-py3-none-any.whl", hash = "sha256:0522e76c2f30b9da409c3bea69e753110e1255a9c45263e483175fd08b4a2aae", size = 59593 },
 ]
 
 [[package]]
