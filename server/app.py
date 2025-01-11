@@ -42,7 +42,7 @@ def _unauthorized(req, exc):
 ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 
 app, rt = fast_app(
-    debug=True,
+    debug=os.getenv("DEBUG") == "true",
     hdrs=hdrs, # tailwind
     default_hdrs=True, # htmx
     static_path=os.path.join(ROOT_PATH, "static"),
