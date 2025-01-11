@@ -10,7 +10,7 @@ import logging
 # Globals
 # ------------------------------------------------------------------------
 
-SERVER_URL = "http://localhost:5001"
+SERVER_URL = "https://blendercopilot.com"
 ENDPOINTS = {
     "image": "/infer/image_to_3d",
     "text": "/infer/text_to_3d",
