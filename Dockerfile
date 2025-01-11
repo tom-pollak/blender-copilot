@@ -13,4 +13,4 @@ COPY . .
 # run
 EXPOSE 8080
 ENV PORT=8080
-ENTRYPOINT ["uv", "run", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "$PORT"]
+ENTRYPOINT ["uv", "run", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8080"]
