@@ -17,6 +17,8 @@ ENDPOINTS = {
 }
 REQUEST_TIMEOUT = 5 * 60 # 5 minutes
 
+ROOTDIR = os.path.dirname(os.path.abspath(__file__))
+
 MAX_JOBS = 3
 jobs = []
 job_counter = 0
@@ -32,7 +34,7 @@ def setup_logger():
     console_handler.setFormatter(console_formatter)
 
     # File handler (writes to a log file in Blender's temp directory)
-    log_file = os.path.join(os.path.dirname(__file__), "blender_copilot.log")
+    log_file = os.path.join(ROOTDIR, "blender_copilot.log")
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
