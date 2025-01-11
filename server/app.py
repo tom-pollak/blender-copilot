@@ -23,20 +23,20 @@ hdrs = (
 
 def _not_found(req, exc):
     logger.debug("Hit 404")
-    return Container(
+    return HTMLResponse(to_xml(Main(
         H1("404", style="margin:30px 0; font-size:4em; line-height:1; letter-spacing:-1px; font-family: Times; font-weight: bold"),
         P(Strong("Page not found :(", style="font-family: Times; font-weight: bold")),
         style="margin:10px auto; max-width:600px; text-align:center"
-    )
+    )), status_code=404)
 
 def _unauthorized(req, exc):
     logger.debug("Hit 401")
     req.session.clear()
-    return Container(
+    return HTMLResponse(to_xml(Main(
         H1("401", style="margin:30px 0; font-size:4em; line-height:1; letter-spacing:-1px; font-family: Times; font-weight: bold"),
         P(Strong("Unauthorized :(", style="font-family: Times; font-weight: bold")),
         style="margin:10px auto; max-width:600px; text-align:center"
-    )
+    )), status_code=401)
 
 
 ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
