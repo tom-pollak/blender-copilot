@@ -11,8 +11,7 @@ from . import license_manager
 # Globals
 # ------------------------------------------------------------------------
 
-# SERVER_URL = "https://blendercopilot.com"
-SERVER_URL = "http://localhost:5001"
+SERVER_URL = "https://blendercopilot.com" # "http://localhost:5001"
 ENDPOINTS = {
     "image": "/infer/image_to_3d",
     "text": "/infer/text_to_3d",
