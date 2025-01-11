@@ -93,6 +93,10 @@ def generate(job):
             with open(job["image_path"], "rb") as image_file:
                 files = {"images": image_file.read()}
         else:
+            if not job["text_prompt"]:
+                job["status"] = "error"
+                job["error_message"] = "Text prompt is required for text-to-3d generation."
+                return
             files = None
 
         logger.info(f"[generate] Requesting {job['text_prompt']}")
