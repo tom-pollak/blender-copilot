@@ -93,7 +93,6 @@ def init_auth(app):
         state = req.query_params.get("state", {})
         login_url = oauth.login_link(req, state=state)
         return RedirectResponse(login_url, status_code=303)
-        # return A("Login with Google", href=login_url)
 
     @app.get("/logout")
     @csrf_protect

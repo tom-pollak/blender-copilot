@@ -23,11 +23,15 @@ def manage_billing(req):
         return RedirectResponse("/upgrade", status_code=303)
 
     logger.debug("User has Stripe customer ID, creating portal session")
-    portal_session = stripe.billing_portal.Session.create(
-        customer=user.stripe_customer_id,
-        return_url=f"{DOMAIN}/profile",
-    )
-    return RedirectResponse(portal_session.url, status_code=303)
+    try:
+        portal_session = stripe.billing_portal.Session.create(
+            customer=user.stripe_customer_id,
+            return_url=f"{DOMAIN}/profile",
+        )
+        return RedirectResponse(portal_session.url, status_code=303)
+    except stripe.error.InvalidRequestError as e:
+        logger.error(f"Failed to create portal session, redirecting to upgrade: {e}")
+        return RedirectResponse("/upgrade", status_code=303)
 
 
 def _update_user(
