@@ -30,8 +30,8 @@ def manage_billing(req):
         )
         return RedirectResponse(portal_session.url, status_code=303)
     except stripe.error.InvalidRequestError as e:
-        logger.error(f"Failed to create portal session, redirecting to upgrade: {e}")
-        return RedirectResponse("/upgrade", status_code=303)
+        logger.error(f"Failed to create portal session, redirecting to profile: {e}")
+        return RedirectResponse("/profile", status_code=303)
 
 
 def _update_user(
