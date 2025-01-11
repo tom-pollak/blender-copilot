@@ -9,6 +9,9 @@ from fasthtml.common import *
 
 from .app import rt
 from .api_utils import rate_limited
+from .db import get_user_by_api_token
+from .plans import PLANS
+from fastapi import HTTPException
 
 __all__ = ["text_to_3d", "image_to_3d"]
 
@@ -76,6 +79,30 @@ def _listreq(k: str, lst: list):
     "Multi-request format: list of tuples"
     return [(k, o) for o in lst]
 
+# Add helper function to get plan info
+async def get_plan_info(user) -> dict:
+    """Get plan info for a user"""
+    plan_details = PLANS[user.plan] # type: ignore
+    daily_limit = plan_details["limit"]
+    calls_left = daily_limit - user.daily_calls
+    return {
+        "plan": user.plan,
+        "calls_left": calls_left,
+        "daily_limit": daily_limit
+    }
+
+# Add new helper function
+async def add_plan_info_to_response(response: Response, req: Request):
+    """Add plan info to response headers if request was successful and user is authenticated"""
+    if response.status_code == 200:
+        auth_header = req.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            api_token = auth_header.split(" ")[1]
+            if user := get_user_by_api_token(api_token):
+                plan_info = await get_plan_info(user)
+                response.headers["X-Plan-Info"] = json.dumps(plan_info)
+    return response
+
 @rt("/infer/image_to_3d")
 @rate_limited
 async def image_to_3d(req: Request):
@@ -104,7 +131,8 @@ async def image_to_3d(req: Request):
         return Response("Invalid model_type", status_code=400, media_type="text/plain")
 
     logger.info(f"Model name: {model_name}\nConfig: {config}")
-    return await req_modal_endpoint(model_name, files=_listreq("images", images), data={'config': json.dumps(config)})
+    response = await req_modal_endpoint(model_name, files=_listreq("images", images), data={'config': json.dumps(config)})
+    return await add_plan_info_to_response(response, req)
 
 @rt("/infer/text_to_3d")
 @rate_limited
@@ -136,4 +164,29 @@ async def text_to_3d(req: Request):
     _job_id += 1
 
     logger.info(f"Length of images: {len(images)}")
-    return await req_modal_endpoint("sf3d", files=_listreq("images", images), data=data)
+    response = await req_modal_endpoint("sf3d", files=_listreq("images", images), data=data)
+    return await add_plan_info_to_response(response, req)
+
+@rt("/infer/validate-license")
+async def validate_license(req: Request):
+    """Validate license key and return plan info"""
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+    api_token = auth_header.split(" ")[1]
+    user = get_user_by_api_token(api_token)
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API token")
+
+    # Get plan details
+    plan_info = await get_plan_info(user)
+
+    # Create response with empty content but plan info in header
+    response = Response(
+        content=b"",
+        status_code=200,
+        headers={"X-Plan-Info": json.dumps(plan_info)}
+    )
+    return response

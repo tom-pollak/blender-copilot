@@ -5,12 +5,14 @@ import json
 import threading
 from datetime import datetime
 import logging
+from . import license_manager
 
 # ------------------------------------------------------------------------
 # Globals
 # ------------------------------------------------------------------------
 
-SERVER_URL = "https://blendercopilot.com"
+# SERVER_URL = "https://blendercopilot.com"
+SERVER_URL = "http://localhost:5001"
 ENDPOINTS = {
     "image": "/infer/image_to_3d",
     "text": "/infer/text_to_3d",
@@ -19,11 +21,11 @@ REQUEST_TIMEOUT = 5 * 60 # 5 minutes
 
 ROOTDIR = os.path.dirname(os.path.abspath(__file__))
 
-LICENSE_KEY = None # change to liscence key, else will be free tier
-
 MAX_JOBS = 3
 jobs = []
 job_counter = 0
+
+license_mgr = license_manager.LicenseManager(ROOTDIR)
 
 def setup_logger():
     logger = logging.getLogger('BlenderCopilot')
@@ -94,10 +96,9 @@ def generate(job):
             files = None
 
         logger.info(f"[generate] Requesting {job['text_prompt']}")
-        auth_headers = {"Authorization": f"Bearer {LICENSE_KEY}"} if LICENSE_KEY else {}
         response = requests.get(
             f"{SERVER_URL}{ENDPOINTS[endpoint]}",
-            headers=auth_headers,
+            headers=license_mgr.get_auth_headers(),
             files=files,
             data=dict(config=json.dumps(config)),
             timeout=REQUEST_TIMEOUT,
@@ -105,6 +106,9 @@ def generate(job):
 
         logger.info(f"[generate] Response: {response.status_code}")
         if response.status_code == 200:
+            # Update plan info from response headers
+            license_mgr.update_plan_info_from_headers(response.headers)
+
             glb_files = msgpack.unpackb(response.content)
 
             out_dir = os.path.join(bpy.app.tempdir, f"bcopilot_job_{job['id']}")
@@ -287,6 +291,13 @@ class BCOPILOT_Properties(bpy.types.PropertyGroup):
             ("4096", "4096", ""),
         ],
         default="1024",
+    )
+
+    license_key: bpy.props.StringProperty(
+        name="License Key",
+        description="Enter your license key",
+        default="",
+        subtype='PASSWORD'
     )
 
 
@@ -587,6 +598,84 @@ def redraw_ui():
                         region.tag_redraw()
 
 # ------------------------------------------------------------------------
+# Operator: Manage License
+# ------------------------------------------------------------------------
+class BCOPILOT_OT_ManageLicense(bpy.types.Operator):
+    """Manage license key"""
+    bl_idname = "bcopilot.manage_license"
+    bl_label = "Update License"
+
+    action: bpy.props.EnumProperty(
+        items=[
+            ('SAVE', "Save", "Save license key"),
+            ('CLEAR', "Clear", "Clear license key"),
+        ]
+    )
+
+    def execute(self, context):
+        if self.action == 'SAVE':
+            key = context.scene.bcopilot_props.license_key
+            if license_mgr.save_license(key):
+                if license_mgr.validate_license(SERVER_URL):
+                    self.report({'INFO'}, "License updated successfully")
+                else:
+                    self.report({'ERROR'}, "Invalid license key")
+                    license_mgr.clear_license()
+            else:
+                self.report({'ERROR'}, "Failed to save license")
+        else:  # CLEAR
+            if license_mgr.clear_license():
+                context.scene.bcopilot_props.license_key = ""
+                self.report({'INFO'}, "License cleared")
+            else:
+                self.report({'ERROR'}, "Failed to clear license")
+
+        return {'FINISHED'}
+
+# ------------------------------------------------------------------------
+# Panel: Settings Panel
+# ------------------------------------------------------------------------
+class BCOPILOT_PT_SettingsPanel(bpy.types.Panel):
+    """Settings Panel for Blender Copilot"""
+    bl_label = "Settings"
+    bl_idname = "BCOPILOT_PT_settings_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Copilot"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.bcopilot_props
+
+        # License Status
+        box = layout.box()
+        row = box.row()
+        if license_mgr.plan_info:
+            plan_info = license_mgr.plan_info
+            row.label(text=f"{plan_info.plan} Plan", icon='CHECKMARK')
+            box.label(text=f"API Calls: {plan_info.calls_left}/{plan_info.daily_limit}")
+        else:
+            row.label(text="No Active License", icon='ERROR')
+
+        # License Management
+        box = layout.box()
+        box.label(text="License Management:")
+
+        if license_mgr.license_key:
+            # Show partial key
+            key = license_mgr.license_key
+            masked_key = f"{key[:6]}...{key[-4:]}"
+            box.label(text=f"Current Key: {masked_key}")
+
+            row = box.row()
+            row.operator("bcopilot.manage_license", text="Clear License").action = 'CLEAR'
+
+        box.prop(props, "license_key", text="New Key")
+        row = box.row()
+        row.operator("bcopilot.manage_license", text="Update License").action = 'SAVE'
+
+# ------------------------------------------------------------------------
 # Registration
 # ------------------------------------------------------------------------
 classes = (
@@ -597,6 +686,8 @@ classes = (
     BCOPILOT_OT_NotificationWatcher,
     BCOPILOT_OT_StatusNotification,
     BCOPILOT_PT_MainPanel,
+    BCOPILOT_OT_ManageLicense,
+    BCOPILOT_PT_SettingsPanel,
 )
 
 def register_addon_classes():
@@ -610,6 +701,9 @@ def register_addon_classes():
     bpy.types.Scene.bcopilot_props = bpy.props.PointerProperty(type=BCOPILOT_Properties)
     bpy.types.Scene.bcopilot_show_advanced = bpy.props.BoolProperty(default=False)
     start_notification_watcher()
+
+    # Validate license on startup
+    license_mgr.validate_license(SERVER_URL)
 
 
 
