@@ -9,10 +9,9 @@ from .db import User, user_tbl, get_authenticated_user
 from .plans import PlansT
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-# WEBHOOK_ENDPOINT_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-WEBHOOK_ENDPOINT_SECRET = "whsec_681e078f76ca423a17f843921b1e8374341477f9222ba2018b8c3b04c60b7f0e"
 
-PAYMENT_LINK_URL = "https://buy.stripe.com/test_cN2cQwgQ59iBguc3cc"
+WEBHOOK_ENDPOINT_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+PAYMENT_LINK_URL = os.getenv("STRIPE_PAYMENT_LINK_URL")
 
 
 @rt("/manage-billing")

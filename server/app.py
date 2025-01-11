@@ -10,7 +10,7 @@ __all__ = ["app", "rt", "oauth", "ROOT_PATH"]
 
 load_dotenv()
 
-DOMAIN = "http://localhost:5001"
+DOMAIN = os.getenv("DOMAIN")
 
 hdrs = (
     Meta(charset="UTF-8"),
