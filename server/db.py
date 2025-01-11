@@ -23,7 +23,7 @@ class User:
     daily_calls: int  # Calls made today
     last_call_date: str  # Date of last API call
     last_call_time: str  # Time of last API call
-    plan: PlansT  # User's plan type: free, premium
+    plan: str  # User's plan type: free, premium
     api_token: str
     stripe_customer_id: str | None
     stripe_subscription_id: str | None

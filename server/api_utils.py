@@ -3,7 +3,7 @@ from datetime import date, datetime
 from functools import wraps
 from fasthtml.common import *
 
-from .plans import PLAN_LIMITS
+from .plans import PLANS
 from .db import User, get_user_by_api_token, IPUsage, ip_usage_tbl, user_tbl
 
 def increment_api_calls(data: User | IPUsage, tbl, limit: int) -> bool:
@@ -45,7 +45,7 @@ def rate_limited(f):
             user = get_user_by_api_token(token)
             logger.debug(f"User: {user}")
             if not user or not increment_api_calls(
-                user, user_tbl, PLAN_LIMITS[user.plan]
+                user, user_tbl, PLANS[user.plan]["limit"]
             ):
                 return err_resp
         # Anonymous users -- no IP
@@ -56,7 +56,7 @@ def rate_limited(f):
         else:
             client_ip = req.client.host
             logger.debug(f"Anonymous user -- with IP {client_ip}")
-            free_limit = PLAN_LIMITS["free"]
+            free_limit = PLANS["free"]["limit"]
             try:
                 ip_data = ip_usage_tbl[client_ip]
                 logger.debug(f"IP {client_ip} found in db")

@@ -3,12 +3,6 @@ from typing import Any, Literal
 
 PlansT = Literal["free", "premium"]
 
-PLAN_LIMITS: dict[PlansT, int] = {
-    "free": 10,  # Unauthenticated or free tier
-    "premium": 200,  # Premium tier
-}
-
-
 PLANS: dict[PlansT, dict[str, Any]] = {
     "free": {
         "price": 0.0,

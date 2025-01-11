@@ -16,10 +16,14 @@ PAYMENT_LINK_URL = os.getenv("STRIPE_PAYMENT_LINK_URL")
 
 @rt("/manage-billing")
 def manage_billing(req):
+    logger.debug("Manage billing called")
     user = get_authenticated_user(req)
+    logger.debug(f"User: {user}")
     if not user.stripe_customer_id:
-        return Titled("No subscription", P("You have no Stripe customer ID."))
+        logger.debug("User has no Stripe customer ID, redirecting to upgrade")
+        return RedirectResponse("/upgrade", status_code=303)
 
+    logger.debug("User has Stripe customer ID, creating portal session")
     portal_session = stripe.billing_portal.Session.create(
         customer=user.stripe_customer_id,
         return_url=f"https://{DOMAIN}/profile",
