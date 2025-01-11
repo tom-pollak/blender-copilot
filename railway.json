@@ -8,7 +8,7 @@
     "region": "us-west2",
     "runtime": "V2",
     "numReplicas": 1,
-    "startCommand": "uv run uvicorn server.app:app --host 0.0.0.0 --port 80",
+    "startCommand": "uv run uvicorn server.app:app --host 0.0.0.0 --port $PORT",
     "sleepApplication": false,
     "multiRegionConfig": {
       "us-west2": {
