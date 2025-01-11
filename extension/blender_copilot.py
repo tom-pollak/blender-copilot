@@ -19,6 +19,8 @@ REQUEST_TIMEOUT = 5 * 60 # 5 minutes
 
 ROOTDIR = os.path.dirname(os.path.abspath(__file__))
 
+LICENSE_KEY = None # change to liscence key, else will be free tier
+
 MAX_JOBS = 3
 jobs = []
 job_counter = 0
@@ -92,10 +94,10 @@ def generate(job):
             files = None
 
         logger.info(f"[generate] Requesting {job['text_prompt']}")
-        token = "WfZ1RSadChvs-mTGAul5azWziczgrEEbauZGQz8xot0"
+        auth_headers = {"Authorization": f"Bearer {LICENSE_KEY}"} if LICENSE_KEY else {}
         response = requests.get(
             f"{SERVER_URL}{ENDPOINTS[endpoint]}",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=auth_headers,
             files=files,
             data=dict(config=json.dumps(config)),
             timeout=REQUEST_TIMEOUT,
@@ -211,6 +213,16 @@ def number_of_active_jobs():
 # Property Group
 # ------------------------------------------------------------------------
 class BCOPILOT_Properties(bpy.types.PropertyGroup):
+    # Add tab enum property
+    generation_type: bpy.props.EnumProperty(
+        name="Generation Type",
+        items=[
+            ("TEXT", "Text to 3D", "Generate 3D models from text descriptions"),
+            ("IMAGE", "Image to 3D", "Generate 3D models from reference images"),
+        ],
+        default="TEXT"
+    )
+
     text_prompt: bpy.props.StringProperty(
         name="Text Prompt", description="Your text prompt for generation", default=""
     )
@@ -290,20 +302,23 @@ class BCOPILOT_OT_CreateJob(bpy.types.Operator):
     def execute(self, context):
         props = context.scene.bcopilot_props
 
+        # Set use_image based on generation type
+        use_image = props.generation_type == "IMAGE"
+
         # Validate if an image is needed
-        if props.use_image:
+        if use_image:
             if (not props.image_path) or (not os.path.isfile(props.image_path)):
                 self.report(
                     {"ERROR"},
-                    "Please select a valid image file or uncheck 'Use Image'.",
+                    "Please select a valid image file for Image to 3D generation.",
                 )
                 return {"CANCELLED"}
 
         new_job = create_new_job(
             model_type=props.model_type,
             text_prompt=props.text_prompt,
-            use_image=props.use_image,
-            image_path=props.image_path,
+            use_image=use_image,
+            image_path=props.image_path if use_image else None,
             use_scene_style=False,
             resampler=props.resampler,
             resolution=props.resolution,
@@ -489,24 +504,28 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
         layout = self.layout
         props = context.scene.bcopilot_props
 
+        # Add tab selector
+        row = layout.row()
+        row.prop(props, "generation_type", expand=True)
+
         box = layout.box()
-        box.label(text="Generation Settings", icon="RENDER_STILL")
-        box.label(text="Prompt:")
-        box.prop(props, "text_prompt", text="")
+        if props.generation_type == "TEXT":
+            box.label(text="Text to 3D", icon="FONT_DATA")
+            box.label(text="Prompt:")
+            box.prop(props, "text_prompt", text="")
 
-        row = box.row()
-        row.label(text="Num Images:")
-        row.prop(props, "batch_size", text="")
+            row = box.row()
+            row.label(text="Num Images:")
+            row.prop(props, "batch_size", text="")
 
-        row = box.row()
-        row.prop(props, "use_image", text="Use Image?")
-        if props.use_image:
+        else:  # IMAGE mode
+            box.label(text="Image to 3D", icon="IMAGE_DATA")
             row = box.row().split(factor=0.3)
-            row.label(text="Image path:")
+            row.label(text="Image:")
             row.prop(props, "image_path", text="")
 
-        # row = box.row()
-        # row.prop(props, "use_scene_style", text="Use Scene Style?")
+            box.label(text="Prompt (optional):")
+            box.prop(props, "text_prompt", text="")
 
         # Add collapsible advanced section
         box = layout.box()
@@ -531,6 +550,7 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
 
         layout.operator("bcopilot.create_job", text="Start Generation")
 
+        # Jobs list remains the same
         layout.separator()
         layout.label(
             text=f"Active Jobs (max {MAX_JOBS}): {number_of_active_jobs()}", icon="INFO"
@@ -541,7 +561,6 @@ class BCOPILOT_PT_MainPanel(bpy.types.Panel):
             row.label(text=f"Job {job['id']}")
             row.label(text=f"Status: {job['status']}")
 
-            # Cancel button
             op = row.operator("bcopilot.cancel_job", text="", icon='X')
             op.job_id = job["id"]
 
