@@ -2,6 +2,10 @@
 
 Extension to generate 3D models from Blender.
 
+## Demo
+
+https://github.com/user-attachments/assets/8aca25df-7499-411b-8400-2c10c7288bb6
+
 ## Setup
 
 ### Environment
