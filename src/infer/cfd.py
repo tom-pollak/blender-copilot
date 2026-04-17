@@ -30,7 +30,7 @@ cuda_dev_image = modal.Image.from_registry(
     f"nvidia/cuda:{tag}", add_python="3.11"
 ).entrypoint([])
 
-stable_fast3d_commit_sha = "2b35658e6fa41df4171f15d8696102c62845f16a"
+cfd_commit_sha = "cbaed56670475b37bac683ca93af90b821bae590"
 
 image = (
     cuda_dev_image.apt_install(
@@ -46,7 +46,8 @@ image = (
         "setuptools==69.5.1",
         "wheel",
         "huggingface_hub[hf_transfer]==0.26.2",
-        "torch==2.5.1",
+        "torch==2.2.1+cu121",
+        "torchvision",
         "numpy<2",
         "pydantic==2.10.4",
         "fastapi[standard]",
@@ -56,15 +57,16 @@ image = (
         # For texture baker
         "USE_CUDA": "1",
         "TORCH_CUDA_ARCH_LIST": "7.0;7.5;8.0;8.6",
+        "FORCE_CUDA": "1",
+        "CUDA_HOME": "/usr/local/cuda",
     })
-    .run_commands("git clone https://github.com/Stability-AI/stable-fast-3d.git stable-fast-3d")
-    .workdir("/stable-fast-3d")
-    .run_commands(f"git checkout {stable_fast3d_commit_sha}")
-    .run_commands("pip install -r requirements.txt")
-    .workdir("/")
+    .run_commands("git clone https://github.com/runjie-yan/ConsistentFlowDistillation.git /ConsistentFlowDistillation")
+    .workdir("/ConsistentFlowDistillation")
+    .run_commands(f"git checkout {cfd_commit_sha}")
+    .run_commands("pip install -r requirements-121.txt")
     .env({
-        "PYTHONPATH": "/stable-fast-3d",
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
+        "PYTHONPATH": "/ConsistentFlowDistillation",
     })
 )
 
@@ -75,6 +77,7 @@ with image.imports():
 MINUTES = 60  # seconds
 
 auth_scheme = HTTPBearer()
+model_cache = modal.Volume.from_name("cfd-model-cache", create_if_missing=True)
 app = modal.App("stable-fast-3d", image=image)
 
 
@@ -91,31 +94,44 @@ class GenerationConfig(BaseModel):
 
 @app.cls(
     gpu="A10G",
-    container_idle_timeout=20 * MINUTES,
+    scaledown_window=20 * MINUTES,
     timeout=20 * MINUTES,
     secrets=[modal.Secret.from_name("huggingface-token"),
              modal.Secret.from_name("blender-api-token")],
+    volumes={"/models": model_cache},
 )
 class Model:
     def setup_model(self):
         import os
         import huggingface_hub # type: ignore
-        huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+        from pathlib import Path
 
-        model = SF3D.from_pretrained(
-            "stabilityai/stable-fast-3d",
-            config_name="config.yaml",
-            weight_name="model.safetensors",
-        ).eval()
+        # Check if model is already cached
+        cache_dir = Path("/models/stable-fast-3d")
+        if cache_dir.exists() and any(cache_dir.iterdir()):
+            print("Loading model from cache...")
+            model = SF3D.from_pretrained(
+                cache_dir,
+                config_name="config.yaml",
+                weight_name="model.safetensors",
+            ).eval()
+        else:
+            print("Downloading model to cache...")
+            huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+            model = SF3D.from_pretrained(
+                "stabilityai/stable-fast-3d",
+                config_name="config.yaml",
+                weight_name="model.safetensors",
+                cache_dir=cache_dir,
+            ).eval()
+            model_cache.commit()
+
         rembg_session = rembg.new_session()
         return model, rembg_session
 
-    @modal.build()
-    def build(self):
-        self.setup_model()
-
     @modal.enter()
     def enter(self):
+        model_cache.reload()  # Get latest cached model
         model, rembg_session = self.setup_model()
         self.model = model.to("cuda")
         self.rembg_session = rembg_session
@@ -153,7 +169,7 @@ class Model:
         return mesh_bytes
 
 
-    @modal.web_endpoint(method="POST", docs=True)
+    @modal.fastapi_endpoint(method="POST", docs=True)
     async def web(
         self,
         request: Request,
@@ -213,7 +229,7 @@ class Model:
             )
 
 @app.function(secrets=[modal.Secret.from_name("blender-api-token")])
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 async def healthcheck(
     request: Request,
     token: HTTPAuthorizationCredentials = Depends(auth_scheme),

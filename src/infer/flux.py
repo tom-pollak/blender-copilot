@@ -52,6 +52,7 @@ flux_image = flux_image.env({"TORCHINDUCTOR_CACHE_DIR": "/root/.inductor-cache"}
 )
 
 auth_scheme = HTTPBearer()
+model_cache = modal.Volume.from_name("flux-model-cache", create_if_missing=True)
 app = modal.App("flux", image=flux_image)
 
 with flux_image.imports():
@@ -65,7 +66,7 @@ NUM_INFERENCE_STEPS = 25  # use ~50 for [dev], smaller for [schnell]
 
 @app.cls(
     gpu="H100",  # fastest GPU on Modal
-    container_idle_timeout=20 * MINUTES,
+    scaledown_window=20 * MINUTES,
     timeout=60 * MINUTES,  # leave plenty of time for compilation
     secrets=[
         modal.Secret.from_name("huggingface-token"),
@@ -77,6 +78,7 @@ NUM_INFERENCE_STEPS = 25  # use ~50 for [dev], smaller for [schnell]
         "/root/.inductor-cache": modal.Volume.from_name(
             "inductor-cache", create_if_missing=True
         ),
+        "/models": model_cache,
     },
 )
 class Model:
@@ -87,24 +89,30 @@ class Model:
     def setup_model(self):
         import huggingface_hub # type: ignore
         from transformers.utils import move_cache # type: ignore
+        from pathlib import Path
 
-        huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
-        huggingface_hub.snapshot_download(f"black-forest-labs/FLUX.1-{VARIANT}")
+        cache_dir = Path(f"/models/FLUX.1-{VARIANT}")
+        if cache_dir.exists() and any(cache_dir.iterdir()):
+            print("Loading model from cache...")
+            pipe = FluxPipeline.from_pretrained(
+                str(cache_dir), torch_dtype=torch.bfloat16
+            )
+        else:
+            print("Downloading model to cache...")
+            huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+            huggingface_hub.snapshot_download(f"black-forest-labs/FLUX.1-{VARIANT}", local_dir=str(cache_dir))
+            model_cache.commit()
+            move_cache()
 
-        move_cache()
-
-        pipe = FluxPipeline.from_pretrained(
-            f"black-forest-labs/FLUX.1-{VARIANT}", torch_dtype=torch.bfloat16
-        )
+            pipe = FluxPipeline.from_pretrained(
+                str(cache_dir), torch_dtype=torch.bfloat16
+            )
 
         return pipe
 
-    @modal.build()
-    def build(self):
-        self.setup_model()
-
     @modal.enter()
     def enter(self):
+        model_cache.reload()  # Get latest cached model
         pipe = self.setup_model()
         pipe.to("cuda")  # move model to GPU
         self.pipe = optimize(pipe, compile=bool(self.compile))
@@ -125,7 +133,7 @@ class Model:
             image_bytes.append(byte_stream.getvalue())
         return image_bytes
 
-    @modal.web_endpoint(method="POST", docs=True)
+    @modal.fastapi_endpoint(method="POST", docs=True)
     def web(
         self,
         request: Request,

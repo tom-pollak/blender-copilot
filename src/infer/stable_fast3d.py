@@ -15,13 +15,76 @@ from tqdm import tqdm
 import torch
 import modal
 
-from fastapi import Response, Body, Depends, HTTPException, status, Request, File, UploadFile
+from fastapi import Response, Body, Depends, HTTPException, status, Request, File, UploadFile, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import msgpack
 
-from infer.utils import remove_background, resize_foreground
+# from infer.utils import remove_background, resize_foreground
 
-cuda_version = "12.4.0" # no greater than host CUDA version
+from PIL import Image
+from PIL.Image import Image as ImageT
+import numpy as np
+from typing import Any
+
+
+def remove_background(
+    image: ImageT,
+    rembg_session: Any = None,
+    force: bool = False,
+    **rembg_kwargs,
+) -> ImageT:
+    import rembg # type: ignore
+    do_remove = True
+    if image.mode == "RGBA" and image.getextrema()[3][0] < 255: # type: ignore
+        do_remove = False
+    do_remove = do_remove or force
+    if do_remove:
+        image = rembg.remove(image, session=rembg_session, **rembg_kwargs) # type: ignore
+    return image
+
+
+def resize_foreground(
+    image: ImageT,
+    ratio: float,
+) -> ImageT:
+    image_np = np.array(image)
+    assert image_np.shape[-1] == 4
+    alpha = np.where(image_np[..., 3] > 0.5)
+    y1, y2, x1, x2 = (
+        alpha[0].min(),
+        alpha[0].max(),
+        alpha[1].min(),
+        alpha[1].max(),
+    )
+    # crop the foreground
+    fg = image_np[y1:y2, x1:x2]
+    # pad to square
+    size = max(fg.shape[0], fg.shape[1])
+    ph0, pw0 = (size - fg.shape[0]) // 2, (size - fg.shape[1]) // 2
+    ph1, pw1 = size - fg.shape[0] - ph0, size - fg.shape[1] - pw0
+    new_image = np.pad(
+        fg,
+        ((ph0, ph1), (pw0, pw1), (0, 0)),
+        mode="constant",
+        constant_values=((0, 0), (0, 0), (0, 0)),
+    )
+
+    # compute padding according to the ratio
+    new_size = int(new_image.shape[0] / ratio)
+    # pad to size, double side
+    ph0, pw0 = (new_size - size) // 2, (new_size - size) // 2
+    ph1, pw1 = new_size - size - ph0, new_size - size - pw0
+    new_image = np.pad(
+        new_image,
+        ((ph0, ph1), (pw0, pw1), (0, 0)),
+        mode="constant",
+        constant_values=((0, 0), (0, 0), (0, 0)),
+    )
+    new_image = Image.fromarray(new_image, mode="RGBA")
+    return new_image
+
+
+cuda_version = "12.4.0" # more stable version
 flavor = "devel" # full CUDA toolkit
 operating_sys = "ubuntu22.04"
 tag = f"{cuda_version}-{flavor}-{operating_sys}"
@@ -30,7 +93,7 @@ cuda_dev_image = modal.Image.from_registry(
     f"nvidia/cuda:{tag}", add_python="3.11"
 ).entrypoint([])
 
-cfd_commit_sha = "cbaed56670475b37bac683ca93af90b821bae590"
+stable_fast3d_commit_sha = "2b35658e6fa41df4171f15d8696102c62845f16a"
 
 image = (
     cuda_dev_image.apt_install(
@@ -46,8 +109,7 @@ image = (
         "setuptools==69.5.1",
         "wheel",
         "huggingface_hub[hf_transfer]==0.26.2",
-        "torch==2.2.1+cu121",
-        "torchvision",
+        "torch==2.5.1",
         "numpy<2",
         "pydantic==2.10.4",
         "fastapi[standard]",
@@ -57,16 +119,15 @@ image = (
         # For texture baker
         "USE_CUDA": "1",
         "TORCH_CUDA_ARCH_LIST": "7.0;7.5;8.0;8.6",
-        "FORCE_CUDA": "1",
-        "CUDA_HOME": "/usr/local/cuda",
     })
-    .run_commands("git clone https://github.com/runjie-yan/ConsistentFlowDistillation.git /ConsistentFlowDistillation")
-    .workdir("/ConsistentFlowDistillation")
-    .run_commands(f"git checkout {cfd_commit_sha}")
-    .run_commands("pip install -r requirements-121.txt")
+    .run_commands("git clone https://github.com/Stability-AI/stable-fast-3d.git stable-fast-3d")
+    .workdir("/stable-fast-3d")
+    .run_commands(f"git checkout {stable_fast3d_commit_sha}")
+    .run_commands("pip install -r requirements.txt")
+    .workdir("/")
     .env({
+        "PYTHONPATH": "/stable-fast-3d",
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
-        "PYTHONPATH": "/ConsistentFlowDistillation",
     })
 )
 
@@ -77,13 +138,14 @@ with image.imports():
 MINUTES = 60  # seconds
 
 auth_scheme = HTTPBearer()
+model_cache = modal.Volume.from_name("stable-fast-3d-model-cache", create_if_missing=True)
 app = modal.App("stable-fast-3d", image=image)
 
 
 class GenerationConfig(BaseModel):
-    model_config = {
-        "extra": "forbid"
-    }
+    # model_config = {
+    #     "extra": "forbid"
+    # }
     texture_resolution: Literal[1024, 2048, 4096] = 1024
     remesh_option: Literal["none", "triangle", "quad"] = "triangle"
     target_vertex_count: int = -1
@@ -92,32 +154,55 @@ class GenerationConfig(BaseModel):
 
 
 @app.cls(
-    gpu="A10G",
-    container_idle_timeout=20 * MINUTES,
+    gpu="A100",
+    scaledown_window=20 * MINUTES,
     timeout=20 * MINUTES,
     secrets=[modal.Secret.from_name("huggingface-token"),
              modal.Secret.from_name("blender-api-token")],
+    volumes={"/models": model_cache},
+    keep_warm=1,
 )
 class Model:
     def setup_model(self):
         import os
         import huggingface_hub # type: ignore
-        huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+        from pathlib import Path
 
-        model = SF3D.from_pretrained(
-            "stabilityai/stable-fast-3d",
-            config_name="config.yaml",
-            weight_name="model.safetensors",
-        ).eval()
+        # Check if model is already cached
+        cache_dir = Path("/models/stable-fast-3d")
+        if cache_dir.exists() and any(cache_dir.iterdir()):
+            print("Loading model from cache...")
+            model = SF3D.from_pretrained(
+                str(cache_dir),
+                config_name="config.yaml",
+                weight_name="model.safetensors",
+            ).eval()
+        else:
+            print("Downloading model to cache...")
+            huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+            huggingface_hub.snapshot_download(
+                "stabilityai/stable-fast-3d",
+                local_dir=str(cache_dir),
+                local_dir_use_symlinks=False,
+                allow_patterns=["config.yaml", "model.safetensors"],
+            )
+            model_cache.commit()
+            model = SF3D.from_pretrained(
+                str(cache_dir),
+                config_name="config.yaml",
+                weight_name="model.safetensors",
+            ).eval()
+
         rembg_session = rembg.new_session()
         return model, rembg_session
 
-    @modal.build()
-    def build(self):
-        self.setup_model()
-
     @modal.enter()
     def enter(self):
+        import platform, torch
+        print("🐍", platform.platform())
+        print("Torch:", torch.__version__, "CUDA:", torch.version.cuda)
+        print("CUDA avail:", torch.cuda.is_available())
+        model_cache.reload()  # Get latest cached model
         model, rembg_session = self.setup_model()
         self.model = model.to("cuda")
         self.rembg_session = rembg_session
@@ -127,7 +212,7 @@ class Model:
         image = resize_foreground(image, config.foreground_ratio)
         return image
 
-    @modal.method()
+    # @modal.method()
     def inference(self, images: list[Image.Image], config: GenerationConfig) -> list[bytes]:
         images = [self.preprocess_image(image, config) for image in images]
 
@@ -155,7 +240,7 @@ class Model:
         return mesh_bytes
 
 
-    @modal.web_endpoint(method="POST", docs=True)
+    @modal.fastapi_endpoint(method="POST", docs=True)
     async def web(
         self,
         request: Request,
@@ -164,12 +249,12 @@ class Model:
         config: Annotated[str, Form()] # type: ignore
     ):
         """Generate 3D models from uploaded images"""
-        if token.credentials != os.environ["API_TOKEN"]:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        # if token.credentials != os.environ["API_TOKEN"]:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_401_UNAUTHORIZED,
+        #         detail="Invalid authentication token",
+        #         headers={"WWW-Authenticate": "Bearer"},
+        #     )
 
 
         pil_images = []
@@ -199,7 +284,7 @@ class Model:
             )
 
         try:
-            mesh_bytes = self.inference.remote(
+            mesh_bytes = self.inference(
                 images=pil_images,
                 config=config,
             )
@@ -215,18 +300,18 @@ class Model:
             )
 
 @app.function(secrets=[modal.Secret.from_name("blender-api-token")])
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 async def healthcheck(
     request: Request,
     token: HTTPAuthorizationCredentials = Depends(auth_scheme),
 ):
     """Simple healthcheck endpoint"""
-    if token.credentials != os.environ["API_TOKEN"]:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # if token.credentials != os.environ["API_TOKEN"]:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid authentication token",
+    #         headers={"WWW-Authenticate": "Bearer"},
+    #     )
     return {"status": "healthy"}
 
 @app.local_entrypoint()

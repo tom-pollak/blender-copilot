@@ -138,6 +138,7 @@ with image.imports():
     from rembg import remove
 
 auth_scheme = HTTPBearer()
+model_cache = modal.Volume.from_name("wonder3d-model-cache", create_if_missing=True)
 app = modal.App("wonder3d-plus", image=image)
 
 
@@ -197,46 +198,71 @@ def process_image(image_input, rembg_session, image_size=2048, crop_size=2048 * 
 
 @app.cls(
     gpu="A10G",
-    container_idle_timeout=10 * 60,
+    scaledown_window=10 * 60,
     timeout=10 * 60,
     secrets=[
         modal.Secret.from_name("huggingface-token"),
         modal.Secret.from_name("blender-api-token"),
     ],
+    volumes={"/models": model_cache},
 )
 class Model:
     def load_pipelines(self):
         from run_mv_prediction import load_wonder3d_pipeline  # type: ignore
         from run_mv_enhancement import load_controlnet_pipeline  # type: ignore
+        import os
+
+        # Set environment to use cached models
+        os.environ["WONDER3D_CKPT_PATH"] = "/models/Wonder3D_plus"
+        os.environ["SAM_CKPT_PATH"] = "/models/sam_pt"
 
         device = torch.device("cuda:0")
         config_mv = OmegaConf.load("./configs/mvdiffusion-joint.yaml")
         config_controlnet = OmegaConf.load("./configs/controlnet.yaml")
+
+        # Update config paths to use cached models
+        if hasattr(config_mv, 'pretrained_model_name_or_path'):
+            config_mv.pretrained_model_name_or_path = "/models/Wonder3D_plus"
+        if hasattr(config_controlnet, 'pretrained_model_name_or_path'):
+            config_controlnet.pretrained_model_name_or_path = "/models/Wonder3D_plus"
+
         mv_pipeline = load_wonder3d_pipeline(config_mv).to(device)
         enhancement_pipeline = load_controlnet_pipeline(config_controlnet).to(device)
         rembg_session = rembg.new_session()
 
         return mv_pipeline, enhancement_pipeline, rembg_session, config_mv, config_controlnet
 
-    @modal.build()
-    def build(self):
+    def download_models(self):
         import huggingface_hub  # type: ignore
+        from pathlib import Path
 
-        huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
-        huggingface_hub.snapshot_download(
-            repo_id="flamehaze1115/Wonder3D_plus", local_dir="./ckpts"
-        )
-        huggingface_hub.hf_hub_download(
-            repo_id="abhishek/StableSAM",
-            filename="sam_vit_h_4b8939.pth",
-            repo_type="space",
-            local_dir="./ckpts/sam_pt",
-        )
+        cache_dir = Path("/models")
+        wonder3d_dir = cache_dir / "Wonder3D_plus"
+        sam_dir = cache_dir / "sam_pt"
 
-        self.load_pipelines()
+        if not (wonder3d_dir.exists() and any(wonder3d_dir.iterdir())):
+            print("Downloading Wonder3D models...")
+            huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+            huggingface_hub.snapshot_download(
+                repo_id="flamehaze1115/Wonder3D_plus", local_dir=str(wonder3d_dir)
+            )
+            model_cache.commit()
+
+        if not (sam_dir / "sam_vit_h_4b8939.pth").exists():
+            print("Downloading SAM model...")
+            huggingface_hub.login(token=os.environ["HUGGINGFACE_TOKEN"])
+            huggingface_hub.hf_hub_download(
+                repo_id="abhishek/StableSAM",
+                filename="sam_vit_h_4b8939.pth",
+                repo_type="space",
+                local_dir=str(sam_dir),
+            )
+            model_cache.commit()
 
     @modal.enter()
     def enter(self):
+        model_cache.reload()  # Get latest cached models
+        self.download_models()  # Ensure models are cached
         t0 = time.perf_counter()
         (
             self.mv_pipeline,
@@ -326,7 +352,7 @@ class Model:
         temp_output_dir.cleanup()
         return obj_bytes
 
-    @modal.web_endpoint(method="POST", docs=True)
+    @modal.fastapi_endpoint(method="POST", docs=True)
     async def web(
         self,
         request: Request,

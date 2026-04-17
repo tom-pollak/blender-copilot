@@ -66,7 +66,7 @@ async def req_modal_endpoint(endpoint: str, timeout: int = REQUEST_TIMEOUT, **po
         return Response("Request timed out", status_code=504, media_type="text/plain")
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error from {endpoint}: {e}")
+        logger.error(f"HTTP error from {endpoint}: {e.response.text}")
         return Response("Bad Gateway", status_code=502, media_type="text/plain")
 
     except Exception as e:
@@ -104,7 +104,7 @@ async def add_plan_info_to_response(response: Response, req: Request):
     return response
 
 @rt("/infer/image_to_3d")
-@rate_limited
+# @rate_limited
 async def image_to_3d(req: Request):
     "Generate 3D model from image"
     form = await parse_form(req)
@@ -135,7 +135,7 @@ async def image_to_3d(req: Request):
     return await add_plan_info_to_response(response, req)
 
 @rt("/infer/text_to_3d")
-@rate_limited
+# @rate_limited
 async def text_to_3d(req: Request):
     "Generate 3D model from text"
     form = await parse_form(req)

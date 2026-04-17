@@ -23,4 +23,5 @@ dependencies = [
     "einops>=0.8.0",
     "torchvision>=0.20.1",
     "stripe>=11.4.1",
+    "fastapi>=0.117.1",
 ]

@@ -104,7 +104,7 @@ with image.imports():
 
 @app.cls(
     gpu="A10G",
-    container_idle_timeout=20 * MINUTES,
+    scaledown_window=20 * MINUTES,
     timeout=20 * MINUTES,
     secrets=[
         modal.Secret.from_name("huggingface-token"),

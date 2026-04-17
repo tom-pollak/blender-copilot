@@ -49,7 +49,7 @@ class GenerationConfig(BaseModel):
 
 @app.cls(
     gpu="A10G",
-    container_idle_timeout=10 * 60,
+    scaledown_window=10 * 60,
     timeout=10 * 60,
     secrets=[
         modal.Secret.from_name("blender-api-token"),
@@ -64,7 +64,7 @@ class Model:
     def inference(self, image: Image.Image) -> bytes:
         return b"test"
 
-    @modal.web_endpoint(method="POST", docs=True)
+    @modal.fastapi_endpoint(method="POST", docs=True)
     async def web(
         self,
         request: Request,

@@ -11,7 +11,7 @@ from . import license_manager
 # Globals
 # ------------------------------------------------------------------------
 
-SERVER_URL = "https://blendercopilot.com" # "http://localhost:5001"
+SERVER_URL = "http://localhost:5001"
 ENDPOINTS = {
     "image": "/infer/image_to_3d",
     "text": "/infer/text_to_3d",
@@ -335,8 +335,8 @@ class BCOPILOT_OT_CreateJob(bpy.types.Operator):
             image_path=props.image_path if use_image else None,
             use_scene_style=False,
             resampler=props.resampler,
-            resolution=props.resolution,
-            batch_size=props.batch_size,
+            resolution=int(props.resolution),
+            batch_size=int(props.batch_size),
         )
 
         if not new_job:
